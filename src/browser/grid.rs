@@ -1,6 +1,6 @@
 use crate::app::App;
-use eframe::egui::{self, Color32, TextureOptions, Vec2, Frame, Margin, Stroke, CornerRadius, TextureHandle};
-use std::path::{Path, PathBuf};
+use eframe::egui::{self, Color32, TextureOptions, Vec2, Frame, Margin, Stroke, CornerRadius};
+use std::path::PathBuf;
 
 const THUMB_SIZE: f32 = 140.0;
 const THUMB_PADDING: f32 = 8.0;
@@ -123,7 +123,14 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 egui::Rect::from_min_size(rect.min, Vec2::new(THUMB_SIZE, THUMB_SIZE));
 
                             if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
-                                let tex = make_thumb_texture(&ctx, ci, path);
+                                let tex = if let Some(t) = app.browser_state.thumb_textures.get(path) {
+                                    t.clone()
+                                } else {
+                                    let key = format!("thumb_{}", path.to_string_lossy());
+                                    let t = ctx.load_texture(&key, ci.clone(), TextureOptions::LINEAR);
+                                    app.browser_state.thumb_textures.insert(path.clone(), t.clone());
+                                    t
+                                };
                                 let tex_size = tex.size_vec2();
                                 let scale =
                                     (THUMB_SIZE / tex_size.x).min(THUMB_SIZE / tex_size.y).min(1.0);
@@ -197,15 +204,6 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                     }
                 });
         });
-}
-
-fn make_thumb_texture(
-    ctx: &egui::Context,
-    ci: &egui::ColorImage,
-    path: &Path,
-) -> TextureHandle {
-    let key = format!("thumb_{}", path.to_string_lossy());
-    ctx.load_texture(&key, ci.clone(), TextureOptions::LINEAR)
 }
 
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {

@@ -26,9 +26,19 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let mut fonts = egui::FontDefinitions::default();
+        if let Some(cjk_data) = crate::font_loader::load_cjk_font() {
+            fonts.font_data.insert("cjk".to_owned(), std::sync::Arc::new(cjk_data));
+            fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
+                .insert(0, "cjk".to_owned());
+            fonts.families.get_mut(&egui::FontFamily::Monospace).unwrap()
+                .insert(0, "cjk".to_owned());
+        }
+        cc.egui_ctx.set_fonts(fonts);
+
         let config = Config::load();
-        let thumbnail_cache = ThumbnailCache::new(256);
+        let thumbnail_cache = ThumbnailCache::new(512, 4);
         let browser_state = browser::State::new();
         let viewer_state = viewer::State::new();
 
@@ -105,8 +115,11 @@ impl App {
 
         self.image_files = files;
 
-        for path in &self.image_files {
-            self.thumbnail_cache.request(path.clone(), 200);
+        let visible = self.image_files.len().min(50);
+        for i in 0..visible {
+            if let Some(path) = self.image_files.get(i) {
+                self.thumbnail_cache.request(path.clone(), 200);
+            }
         }
     }
 
