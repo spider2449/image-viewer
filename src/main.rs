@@ -5,6 +5,7 @@ mod batch;
 mod browser;
 mod config;
 mod editor;
+mod exif;
 mod font_loader;
 mod image_loader;
 mod thumbnail_cache;
