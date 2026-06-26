@@ -83,6 +83,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 {
                     app.viewer_state.show_info = !app.viewer_state.show_info;
                 }
+                if ui.selectable_label(app.exif_state.visible, "Exif").clicked() {
+                    app.exif_state.visible = !app.exif_state.visible;
+                }
                 if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
                     app.editor_state.visible = !app.editor_state.visible;
                 }
