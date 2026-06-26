@@ -6,6 +6,7 @@ use std::path::PathBuf;
 #[allow(dead_code)]
 pub struct State {
     pub zoom: f32,
+    pub fit_zoom: f32,
     pub pan_offset: Vec2,
     pub is_fullscreen: bool,
     pub show_info: bool,
@@ -20,6 +21,7 @@ impl State {
     pub fn new() -> Self {
         Self {
             zoom: 1.0,
+            fit_zoom: 1.0,
             pan_offset: Vec2::ZERO,
             is_fullscreen: false,
             show_info: false,
@@ -59,7 +61,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
                 ui.separator();
                 if ui.button("Fit").clicked() {
-                    app.viewer_state.zoom = 1.0;
+                    app.viewer_state.zoom = app.viewer_state.fit_zoom;
                     app.viewer_state.pan_offset = Vec2::ZERO;
                 }
                 if ui.button("1:1").clicked() {
@@ -152,7 +154,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             }
                         }
                         if ui.button("Fit").clicked() {
-                            app.viewer_state.zoom = 1.0;
+                            app.viewer_state.zoom = app.viewer_state.fit_zoom;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         if ui.button("ESC").clicked() {
@@ -229,7 +231,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             app.viewer_state.show_info = !app.viewer_state.show_info;
                         }
                         egui::Key::F => {
-                            app.viewer_state.zoom = 1.0;
+                            app.viewer_state.zoom = app.viewer_state.fit_zoom;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         egui::Key::Num1 => {
@@ -300,6 +302,7 @@ fn draw_image(
     let zoom = app.viewer_state.zoom;
 
     let scale = (available.x / tex_size.x).min(available.y / tex_size.y);
+    app.viewer_state.fit_zoom = scale;
     let base_size = tex_size * scale;
     let display_size = base_size * zoom;
 

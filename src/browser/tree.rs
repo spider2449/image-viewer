@@ -1,5 +1,5 @@
 use crate::app::App;
-use eframe::egui::{Color32, Ui};
+use eframe::egui::{Color32, CursorIcon, Ui};
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -123,8 +123,10 @@ fn show_node(
 
         let label = if is_selected {
             ui.colored_label(Color32::from_rgb(0, 120, 215), &node.name)
+                .on_hover_cursor(CursorIcon::PointingHand)
         } else {
             ui.label(&node.name)
+                .on_hover_cursor(CursorIcon::PointingHand)
         };
 
         if label.clicked() {

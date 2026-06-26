@@ -45,3 +45,59 @@ impl EditOp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::DynamicImage;
+    use image::GenericImageView;
+
+    #[test]
+    fn test_rotate_180() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::Rotate180.apply(&img);
+        assert_eq!(result.dimensions(), (10, 20));
+    }
+
+    #[test]
+    fn test_rotate_90_cw() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::Rotate90Cw.apply(&img);
+        assert_eq!(result.dimensions(), (20, 10));
+    }
+
+    #[test]
+    fn test_rotate_90_ccw() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::Rotate90Ccw.apply(&img);
+        assert_eq!(result.dimensions(), (20, 10));
+    }
+
+    #[test]
+    fn test_flip_horizontal() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::FlipHorizontal.apply(&img);
+        assert_eq!(result.dimensions(), (10, 20));
+    }
+
+    #[test]
+    fn test_flip_vertical() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::FlipVertical.apply(&img);
+        assert_eq!(result.dimensions(), (10, 20));
+    }
+
+    #[test]
+    fn test_resize() {
+        let img = DynamicImage::new_rgba8(100, 200);
+        let result = EditOp::Resize { width: 50, height: 100 }.apply(&img);
+        assert_eq!(result.dimensions(), (50, 100));
+    }
+
+    #[test]
+    fn test_noop() {
+        let img = DynamicImage::new_rgba8(10, 20);
+        let result = EditOp::NoOp.apply(&img);
+        assert_eq!(result.dimensions(), (10, 20));
+    }
+}

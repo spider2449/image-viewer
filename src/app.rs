@@ -67,6 +67,7 @@ impl App {
     }
 
     pub fn scan_folder(&mut self) {
+        self.textures.clear();
         let folder = match &self.current_folder {
             Some(f) => f.clone(),
             None => return,
@@ -115,11 +116,8 @@ impl App {
 
         self.image_files = files;
 
-        let visible = self.image_files.len().min(50);
-        for i in 0..visible {
-            if let Some(path) = self.image_files.get(i) {
-                self.thumbnail_cache.request(path.clone(), 200);
-            }
+        for path in &self.image_files {
+            self.thumbnail_cache.request(path.clone(), 200);
         }
     }
 
@@ -164,13 +162,9 @@ impl eframe::App for App {
             self.browser_state.thumbnails.insert(result.path, result.image);
         }
 
-        let visible_count = self.image_files.len().min(50);
-        for i in 0..visible_count {
-            if i < self.image_files.len() {
-                let path = &self.image_files[i];
-                if !self.browser_state.thumbnails.contains_key(path) {
-                    self.thumbnail_cache.request(path.clone(), 200);
-                }
+        for path in &self.image_files {
+            if !self.browser_state.thumbnails.contains_key(path) {
+                self.thumbnail_cache.request(path.clone(), 200);
             }
         }
 

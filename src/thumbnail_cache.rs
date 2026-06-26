@@ -2,7 +2,7 @@ use egui::ColorImage;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -51,10 +51,14 @@ impl ThumbnailCache {
                 loop {
                     let req = {
                         let rx = req_rx.lock().unwrap();
-                        rx.recv()
+                        match rx.try_recv() {
+                            Ok(r) => Some(r),
+                            Err(TryRecvError::Empty) => None,
+                            Err(TryRecvError::Disconnected) => break,
+                        }
                     };
                     match req {
-                        Ok(req) => {
+                        Some(req) => {
                             let start = Instant::now();
                             let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
                             match result {
@@ -82,7 +86,9 @@ impl ThumbnailCache {
                                 }
                             }
                         }
-                        Err(_) => break,
+                        None => {
+                            thread::sleep(Duration::from_millis(10));
+                        }
                     }
                 }
             });

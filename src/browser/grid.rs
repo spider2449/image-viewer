@@ -1,5 +1,6 @@
 use crate::app::App;
 use eframe::egui::{self, Color32, TextureOptions, Vec2, Frame, Margin, Stroke, CornerRadius};
+use image::GenericImageView;
 use std::path::PathBuf;
 
 const THUMB_SIZE: f32 = 140.0;
@@ -30,6 +31,27 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             .clicked()
         {
             app.browser_state.show_list_view = !app.browser_state.show_list_view;
+        }
+        let mut sort_changed = false;
+        ui.separator();
+        egui::ComboBox::new("sort_by", "")
+            .selected_text(match app.config.sort_by.as_str() {
+                "date" => "Date",
+                "size" => "Size",
+                _ => "Name",
+            })
+            .show_ui(ui, |ui| {
+                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "name".to_string(), "Name").changed();
+                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "date".to_string(), "Date").changed();
+                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "size".to_string(), "Size").changed();
+            });
+        let dir_label = if app.config.sort_descending { "\u{25BC}" } else { "\u{25B2}" };
+        if ui.selectable_label(false, dir_label).clicked() {
+            app.config.sort_descending = !app.config.sort_descending;
+            sort_changed = true;
+        }
+        if sort_changed {
+            app.scan_folder();
         }
         ui.separator();
         if ui.button("\u{21BB} Refresh").clicked() {
@@ -186,6 +208,50 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 Color32::LIGHT_GRAY,
                             );
 
+                            response.context_menu(|ui| {
+                                if ui.button("Open").clicked() {
+                                    app.switch_to_viewer(i);
+                                    ui.close_menu();
+                                }
+                                if ui.button("Delete").clicked() {
+                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::Delete { path: path.clone() });
+                                    app.scan_folder();
+                                    ui.close_menu();
+                                }
+                                if ui.button("Copy").clicked() {
+                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::Copy { path: path.clone() });
+                                    app.scan_folder();
+                                    ui.close_menu();
+                                }
+                                if ui.button("Open in system viewer").clicked() {
+                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::OpenExternal { path: path.clone() });
+                                    ui.close_menu();
+                                }
+                                ui.menu_button("Save as", |ui| {
+                                    let mut save = |fmt: &str, img_fmt: image::ImageFormat| {
+                                        if let Ok(img) = image::open(path) {
+                                            let new_name = path.with_extension(fmt);
+                                            if fmt == "jpeg" {
+                                                let mut output = std::fs::File::create(&new_name).ok();
+                                                if let Some(ref mut f) = output {
+                                                    let (w, h) = img.dimensions();
+                                                    let rgba = img.to_rgba8();
+                                                    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(f, app.editor_state.save_jpeg_quality);
+                                                    enc.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok();
+                                                }
+                                            } else {
+                                                img.save_with_format(&new_name, img_fmt).ok();
+                                            }
+                                            app.scan_folder();
+                                        }
+                                    };
+                                    if ui.button("PNG").clicked() { save("png", image::ImageFormat::Png); ui.close_menu(); }
+                                    if ui.button("JPEG").clicked() { save("jpeg", image::ImageFormat::Jpeg); ui.close_menu(); }
+                                    if ui.button("BMP").clicked() { save("bmp", image::ImageFormat::Bmp); ui.close_menu(); }
+                                    if ui.button("WEBP").clicked() { save("webp", image::ImageFormat::WebP); ui.close_menu(); }
+                                });
+                            });
+
                             if response.double_clicked() {
                                 thumb_clicked = true;
                             }
@@ -283,5 +349,36 @@ fn format_size(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_size;
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(500), "500 B");
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(50 * 1024), "50.0 KB");
+        assert_eq!(format_size(1024 * 1024 - 1), "1024.0 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+    }
+
+    #[test]
+    fn test_format_size_gb() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.0 GB");
     }
 }
