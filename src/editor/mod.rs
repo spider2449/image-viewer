@@ -22,7 +22,7 @@ pub struct State {
     pub resize_width: u32,
     pub resize_height: u32,
     pub resize_lock_aspect: bool,
-    pub save_format: String,
+    pub save_format: &'static str,
     pub save_jpeg_quality: u8,
 }
 
@@ -39,7 +39,7 @@ impl State {
             resize_width: 0,
             resize_height: 0,
             resize_lock_aspect: true,
-            save_format: "png".to_string(),
+            save_format: "png",
             save_jpeg_quality: 90,
         }
     }
@@ -83,6 +83,27 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.editor_state.visible = false;
                     }
                 });
+
+                ui.separator();
+
+                // Crop
+                if ui.selectable_label(app.editor_state.crop_active, "Crop").clicked() {
+                    app.editor_state.crop_active = !app.editor_state.crop_active;
+                    if !app.editor_state.crop_active {
+                        app.editor_state.crop_start = None;
+                        app.editor_state.crop_end = None;
+                    }
+                }
+                if app.editor_state.crop_active {
+                    if ui.button("Apply Crop").clicked() {
+                        apply_crop(app, ctx);
+                    }
+                    if ui.button("Cancel Crop").clicked() {
+                        app.editor_state.crop_active = false;
+                        app.editor_state.crop_start = None;
+                        app.editor_state.crop_end = None;
+                    }
+                }
 
                 ui.separator();
 
@@ -134,12 +155,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 ui.label("Save As");
                 egui::ComboBox::new("save_format", "")
-                    .selected_text(&app.editor_state.save_format)
+                    .selected_text(app.editor_state.save_format)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut app.editor_state.save_format, "png".to_string(), "PNG");
-                        ui.selectable_value(&mut app.editor_state.save_format, "jpeg".to_string(), "JPEG");
-                        ui.selectable_value(&mut app.editor_state.save_format, "bmp".to_string(), "BMP");
-                        ui.selectable_value(&mut app.editor_state.save_format, "webp".to_string(), "WEBP");
+                        ui.selectable_value(&mut app.editor_state.save_format, "png", "PNG");
+                        ui.selectable_value(&mut app.editor_state.save_format, "jpeg", "JPEG");
+                        ui.selectable_value(&mut app.editor_state.save_format, "bmp", "BMP");
+                        ui.selectable_value(&mut app.editor_state.save_format, "webp", "WEBP");
                     });
                 if app.editor_state.save_format == "jpeg" {
                     ui.add(egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100).text("Quality"));
@@ -220,6 +241,21 @@ fn redo(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+fn apply_crop(app: &mut App, ctx: &egui::Context) {
+    if let (Some(start), Some(end)) = (app.editor_state.crop_start, app.editor_state.crop_end) {
+        let x = start.x.min(end.x) as u32;
+        let y = start.y.min(end.y) as u32;
+        let w = (start.x - end.x).abs() as u32;
+        let h = (start.y - end.y).abs() as u32;
+        if w > 0 && h > 0 {
+            apply_op(app, ctx, EditOp::Crop { x, y, width: w, height: h });
+        }
+        app.editor_state.crop_active = false;
+        app.editor_state.crop_start = None;
+        app.editor_state.crop_end = None;
+    }
+}
+
 fn save_as(app: &mut App) {
     let img = match &app.editor_state.current_image {
         Some(i) => i.clone(),
@@ -233,19 +269,26 @@ fn save_as(app: &mut App) {
 
     let new_ext = &app.editor_state.save_format;
     let new_name = path.with_extension(new_ext);
-    let result = match new_ext.as_str() {
-        "jpeg" => img.save_with_format(&new_name, image::ImageFormat::Jpeg),
-        "bmp" => img.save_with_format(&new_name, image::ImageFormat::Bmp),
-        "webp" => img.save_with_format(&new_name, image::ImageFormat::WebP),
-        _ => img.save_with_format(&new_name, image::ImageFormat::Png),
+    let result = match *new_ext {
+        "jpeg" => {
+            let mut output = match std::fs::File::create(&new_name) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Save failed: {e}");
+                    return;
+                }
+            };
+            let (w, h) = img.dimensions();
+            let rgba = img.to_rgba8();
+            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, app.editor_state.save_jpeg_quality);
+            encoder.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok()
+        }
+        "bmp" => img.save_with_format(&new_name, image::ImageFormat::Bmp).ok(),
+        "webp" => img.save_with_format(&new_name, image::ImageFormat::WebP).ok(),
+        _ => img.save_with_format(&new_name, image::ImageFormat::Png).ok(),
     };
 
-    match result {
-        Ok(_) => {
-            app.scan_folder();
-        }
-        Err(e) => {
-            eprintln!("Save failed: {e}");
-        }
+    if result.is_some() {
+        app.scan_folder();
     }
 }

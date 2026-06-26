@@ -2,7 +2,6 @@ use image::{DynamicImage, imageops};
 
 #[derive(Clone, Debug)]
 pub enum EditOp {
-    #[allow(dead_code)]
     Crop { x: u32, y: u32, width: u32, height: u32 },
     Rotate180,
     Rotate90Cw,
