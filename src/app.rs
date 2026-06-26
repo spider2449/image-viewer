@@ -1,3 +1,4 @@
+use crate::batch;
 use crate::browser;
 use crate::config::Config;
 use crate::editor;
@@ -23,6 +24,7 @@ pub struct App {
     pub viewer_state: viewer::State,
     pub textures: HashMap<String, egui::TextureHandle>,
     pub editor_state: editor::State,
+    pub batch_state: batch::State,
 }
 
 impl App {
@@ -53,6 +55,7 @@ impl App {
             viewer_state,
             textures: HashMap::new(),
             editor_state: editor::State::new(),
+            batch_state: batch::State::new(),
         };
 
         if let Some(ref folder) = app.config.last_folder {
@@ -177,6 +180,8 @@ impl eframe::App for App {
                 editor::show(self, ctx);
             }
         }
+
+        batch::show(self, ctx);
 
         ctx.request_repaint();
     }
