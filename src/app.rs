@@ -2,6 +2,7 @@ use crate::batch;
 use crate::browser;
 use crate::config::Config;
 use crate::editor;
+use crate::exif;
 use crate::thumbnail_cache::ThumbnailCache;
 use crate::viewer;
 use eframe::{egui, Frame};
@@ -25,6 +26,7 @@ pub struct App {
     pub textures: HashMap<String, egui::TextureHandle>,
     pub editor_state: editor::State,
     pub batch_state: batch::State,
+    pub exif_state: exif::ExifData,
 }
 
 impl App {
@@ -56,6 +58,7 @@ impl App {
             textures: HashMap::new(),
             editor_state: editor::State::new(),
             batch_state: batch::State::new(),
+            exif_state: exif::ExifData::new(),
         };
 
         if let Some(ref folder) = app.config.last_folder {
@@ -129,6 +132,7 @@ impl App {
             self.selected_image_index = index;
             if let Some(p) = self.image_files.get(index) {
                 self.editor_state.load_image(p);
+                self.exif_state.parse(p);
             }
             self.mode = Mode::Viewer;
         }
@@ -140,6 +144,7 @@ impl App {
             self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
                 self.editor_state.load_image(p);
+                self.exif_state.parse(p);
             }
         }
     }
@@ -150,6 +155,7 @@ impl App {
             self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
                 self.editor_state.load_image(p);
+                self.exif_state.parse(p);
             }
         }
     }
@@ -230,6 +236,7 @@ impl eframe::App for App {
             Mode::Viewer => {
                 viewer::show(self, ctx);
                 editor::show(self, ctx);
+                exif::show(&mut self.exif_state, ctx);
             }
         }
 
