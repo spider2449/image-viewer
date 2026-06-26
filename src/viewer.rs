@@ -81,6 +81,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 {
                     app.viewer_state.show_info = !app.viewer_state.show_info;
                 }
+                if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
+                    app.editor_state.visible = !app.editor_state.visible;
+                }
                 if ui.button("\u{26F6} FS").clicked() {
                     app.viewer_state.is_fullscreen = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));

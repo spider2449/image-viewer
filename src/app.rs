@@ -1,5 +1,6 @@
 use crate::browser;
 use crate::config::Config;
+use crate::editor;
 use crate::thumbnail_cache::ThumbnailCache;
 use crate::viewer;
 use eframe::{egui, Frame};
@@ -21,6 +22,7 @@ pub struct App {
     pub browser_state: browser::State,
     pub viewer_state: viewer::State,
     pub textures: HashMap<String, egui::TextureHandle>,
+    pub editor_state: editor::State,
 }
 
 impl App {
@@ -40,6 +42,7 @@ impl App {
             browser_state,
             viewer_state,
             textures: HashMap::new(),
+            editor_state: editor::State::new(),
         };
 
         if let Some(ref folder) = app.config.last_folder {
@@ -110,6 +113,9 @@ impl App {
     pub fn switch_to_viewer(&mut self, index: usize) {
         if index < self.image_files.len() {
             self.selected_image_index = index;
+            if let Some(p) = self.image_files.get(index) {
+                self.editor_state.load_image(p);
+            }
             self.mode = Mode::Viewer;
         }
     }
@@ -118,6 +124,9 @@ impl App {
         if self.selected_image_index + 1 < self.image_files.len() {
             self.selected_image_index += 1;
             self.viewer_state.image_loaded = false;
+            if let Some(p) = self.image_files.get(self.selected_image_index) {
+                self.editor_state.load_image(p);
+            }
         }
     }
 
@@ -125,6 +134,9 @@ impl App {
         if self.selected_image_index > 0 {
             self.selected_image_index -= 1;
             self.viewer_state.image_loaded = false;
+            if let Some(p) = self.image_files.get(self.selected_image_index) {
+                self.editor_state.load_image(p);
+            }
         }
     }
 }
@@ -155,6 +167,7 @@ impl eframe::App for App {
             }
             Mode::Viewer => {
                 viewer::show(self, ctx);
+                editor::show(self, ctx);
             }
         }
 

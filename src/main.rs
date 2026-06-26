@@ -3,6 +3,7 @@
 mod app;
 mod browser;
 mod config;
+mod editor;
 mod image_loader;
 mod thumbnail_cache;
 mod viewer;
