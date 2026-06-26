@@ -21,9 +21,9 @@ pub fn batch_convert(
                     Err(e) => { errors.push(format!("{}: {e}", new_name.display())); continue; }
                 };
                 let (w, h) = img.dimensions();
-                let rgba = img.to_rgba8();
+                let rgb = img.to_rgb8();
                 let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, jpeg_quality);
-                encoder.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())
+                encoder.encode(&rgb, w, h, image::ExtendedColorType::Rgb8).map_err(|e| e.to_string())
             }
             "png" => img.save_with_format(&new_name, image::ImageFormat::Png).map_err(|e| e.to_string()),
             "bmp" => img.save_with_format(&new_name, image::ImageFormat::Bmp).map_err(|e| e.to_string()),
@@ -89,9 +89,9 @@ pub fn batch_resize(
                     Err(e) => { errors.push(format!("{}: {e}", path.display())); continue; }
                 };
                 let (w, h) = resized.dimensions();
-                let rgba = resized.to_rgba8();
+                let rgb = resized.to_rgb8();
                 let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, 90);
-                encoder.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())
+                encoder.encode(&rgb, w, h, image::ExtendedColorType::Rgb8).map_err(|e| e.to_string())
             }
             _ => resized.save(path).map_err(|e| e.to_string()),
         };
@@ -100,4 +100,97 @@ pub fn batch_resize(
         }
     }
     if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_batch_convert_png_to_jpeg() {
+        let dir = std::env::temp_dir().join("batch_test_convert");
+        let _ = std::fs::create_dir_all(&dir);
+        let src = dir.join("test.png");
+        let img = image::DynamicImage::new_rgba8(10, 10);
+        img.save(&src).unwrap();
+
+        let result = batch_convert(&[src.clone()], "jpeg", 90);
+        assert!(result.is_ok());
+
+        let dst = src.with_extension("jpg");
+        assert!(dst.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_batch_convert_invalid_file() {
+        let result = batch_convert(&[PathBuf::from("nonexistent.png")], "png", 90);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_rename_sequence() {
+        let dir = std::env::temp_dir().join("batch_test_rename");
+        let _ = std::fs::create_dir_all(&dir);
+        let files: Vec<PathBuf> = (1..=3).map(|i| {
+            let p = dir.join(format!("img{i}.png"));
+            image::DynamicImage::new_rgba8(10, 10).save(&p).unwrap();
+            p
+        }).collect();
+
+        let result = batch_rename(&files, "photo_{n}");
+        assert!(result.is_ok());
+
+        for i in 0..3 {
+            let renamed = dir.join(format!("photo_{:03}.png", i + 1));
+            assert!(renamed.exists(), "missing {renamed:?}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_batch_rename_name_pattern() {
+        let dir = std::env::temp_dir().join("batch_test_rename2");
+        let _ = std::fs::create_dir_all(&dir);
+        let src = dir.join("vacation.png");
+        image::DynamicImage::new_rgba8(10, 10).save(&src).unwrap();
+
+        let result = batch_rename(&[src.clone()], "{name}_edited");
+        assert!(result.is_ok());
+
+        let renamed = dir.join("vacation_edited.png");
+        assert!(renamed.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_batch_resize() {
+        let dir = std::env::temp_dir().join("batch_test_resize");
+        let _ = std::fs::create_dir_all(&dir);
+        let src = dir.join("test.png");
+        image::DynamicImage::new_rgba8(100, 200).save(&src).unwrap();
+
+        let result = batch_resize(&[src.clone()], 50, 100);
+        assert!(result.is_ok());
+
+        let img = image::open(&src).unwrap();
+        assert_eq!(img.dimensions(), (50, 100));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_batch_resize_jpeg() {
+        let dir = std::env::temp_dir().join("batch_test_resize_jpg");
+        let _ = std::fs::create_dir_all(&dir);
+        let src = dir.join("test.jpg");
+        image::DynamicImage::new_rgba8(100, 200).save(&src).unwrap();
+
+        let result = batch_resize(&[src.clone()], 25, 50);
+        assert!(result.is_ok());
+
+        let img = image::open(&src).unwrap();
+        assert_eq!(img.dimensions(), (25, 50));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
