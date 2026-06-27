@@ -47,7 +47,7 @@ impl App {
         let config = Config::load();
         let cache_dir = Self::cache_dir();
         let disk_cache = DiskCache::new(cache_dir.join("thumbnails"));
-        let thumbnail_cache = ThumbnailCache::new(512, 8, Some(disk_cache));
+        let thumbnail_cache = ThumbnailCache::new(512, 4, Some(disk_cache));
         let browser_state = browser::State::new();
         let viewer_state = viewer::State::new();
 

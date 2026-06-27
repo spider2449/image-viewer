@@ -13,6 +13,12 @@ pub struct ThumbnailRequest {
     pub max_size: u32,
 }
 
+struct StoreRequest {
+    path: PathBuf,
+    max_size: u32,
+    image: ColorImage,
+}
+
 pub struct ThumbnailResult {
     pub path: PathBuf,
     pub image: Option<ColorImage>,
@@ -36,6 +42,7 @@ impl ThumbnailCache {
     pub fn new(capacity: usize, worker_count: usize, disk_cache: Option<DiskCache>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<ThumbnailRequest>();
         let (res_tx, res_rx) = mpsc::channel::<ThumbnailResult>();
+        let (store_tx, store_rx) = mpsc::channel::<StoreRequest>();
 
         let cache = Arc::new(Mutex::new(
             LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(256).unwrap())),
@@ -45,11 +52,39 @@ impl ThumbnailCache {
         let disk_cache = disk_cache.map(Arc::new);
         let req_rx = Arc::new(Mutex::new(req_rx));
 
+        // Dedicated store thread — sequential disk writes to avoid contention
+        if let Some(ref dc) = disk_cache {
+            let dc = dc.clone();
+            let store_rx = Arc::new(Mutex::new(store_rx));
+            thread::spawn(move || {
+                loop {
+                    let req = {
+                        let rx = store_rx.lock().unwrap();
+                        match rx.try_recv() {
+                            Ok(r) => Some(r),
+                            Err(TryRecvError::Empty) => None,
+                            Err(TryRecvError::Disconnected) => break,
+                        }
+                    };
+                    match req {
+                        Some(req) => {
+                            dc.store(&req.path, req.max_size, &req.image);
+                        }
+                        None => {
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                }
+            });
+        }
+
+        // Decoder threads — decode only, no disk I/O for store
         for _ in 0..worker_count.max(1) {
             let cache_clone = cache.clone();
             let res_tx = res_tx.clone();
             let req_rx = req_rx.clone();
             let dc = disk_cache.clone();
+            let store_tx = store_tx.clone();
 
             thread::spawn(move || {
                 loop {
@@ -89,10 +124,12 @@ impl ThumbnailCache {
                                     let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
                                     match result {
                                         Ok((ci, w, h)) => {
-                                            // Store to disk
-                                            if let Some(ref d) = dc {
-                                                d.store(&req.path, req.max_size, &ci);
-                                            }
+                                            // Enqueue disk write — non-blocking, store thread handles it
+                                            store_tx.send(StoreRequest {
+                                                path: req.path.clone(),
+                                                max_size: req.max_size,
+                                                image: ci.clone(),
+                                            }).ok();
                                             {
                                                 let mut c = cache_clone.lock().unwrap();
                                                 c.put(req.path.clone(), (ci.clone(), w, h));
