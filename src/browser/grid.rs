@@ -1,5 +1,5 @@
 use crate::app::App;
-use eframe::egui::{self, Color32, TextureOptions, Vec2, Frame, Margin, Stroke, CornerRadius};
+use eframe::egui::{self, Color32, TextureOptions, Vec2, Stroke, CornerRadius};
 use image::GenericImageView;
 use std::path::PathBuf;
 
@@ -72,16 +72,20 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    ui.add_space(4.0);
     ui.label(
         egui::RichText::new(&folder_name)
-            .size(16.0)
-            .color(Color32::from_rgb(200, 200, 200)),
+            .size(18.0)
+            .color(crate::theme::TEXT_PRIMARY)
+            .strong(),
     );
-    ui.add_space(4.0);
+    ui.add_space(8.0);
 
     if app.image_files.is_empty() {
         ui.allocate_space(ui.available_size());
-        ui.centered_and_justified(|ui| ui.label("No images found in this folder."));
+        ui.centered_and_justified(|ui| {
+            ui.colored_label(crate::theme::TEXT_SECONDARY, "No images found in this folder.");
+        });
         return;
     }
 
@@ -119,154 +123,180 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                         }
 
                         let is_selected = app.browser_state.selected_thumb == Some(i);
-                        let frame = Frame {
-                            fill: if is_selected {
-                                Color32::from_rgb(40, 80, 140)
-                            } else {
-                                Color32::from_rgb(30, 30, 30)
-                            },
-                            corner_radius: CornerRadius::same(4),
-                            stroke: if is_selected {
-                                Stroke::new(1.0, Color32::from_rgb(80, 160, 255))
-                            } else {
-                                Stroke::new(1.0, Color32::from_rgb(50, 50, 50))
-                            },
-                            inner_margin: Margin::symmetric(2, 2),
-                            ..Default::default()
+
+                        let (rect, response) = ui.allocate_exact_size(cell_size, egui::Sense::click());
+                        let hovered = response.hovered();
+
+                        // Shadow (subtle dark rect offset)
+                        if is_selected || hovered {
+                            let shadow_offset = Vec2::new(2.0, 2.0);
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_size(rect.min + shadow_offset, cell_size),
+                                CornerRadius::same(4),
+                                Color32::from_black_alpha(60),
+                            );
+                        }
+
+                        // Selection glow
+                        if is_selected {
+                            let glow_rect = rect.expand(3.0);
+                            ui.painter().rect_filled(
+                                glow_rect,
+                                CornerRadius::same(6),
+                                Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 30),
+                            );
+                        }
+
+                        // Card background
+                        let card_bg = if is_selected {
+                            crate::theme::SELECTED_BG
+                        } else {
+                            crate::theme::CARD_BG
                         };
+                        let border_color = if is_selected {
+                            crate::theme::ACCENT
+                        } else if hovered {
+                            crate::theme::ACCENT
+                        } else {
+                            crate::theme::BORDER
+                        };
+                        let border_width: f32 = if is_selected { 2.0 } else { 1.0 };
 
-                        let mut thumb_clicked = false;
-                        let mut thumb_selected = false;
+                        ui.painter().rect(
+                            rect,
+                            CornerRadius::same(4),
+                            card_bg,
+                            Stroke::new(border_width, border_color),
+                            egui::StrokeKind::Outside,
+                        );
 
-                        frame.show(ui, |ui| {
-                            ui.set_min_size(cell_size);
-                            let (rect, response) =
-                                ui.allocate_exact_size(cell_size, egui::Sense::click());
+                        // Thumbnail image area
+                        let thumb_rect = egui::Rect::from_min_size(
+                            rect.min,
+                            Vec2::new(THUMB_SIZE, THUMB_SIZE),
+                        );
 
-                            let thumb_rect =
-                                egui::Rect::from_min_size(rect.min, Vec2::new(THUMB_SIZE, THUMB_SIZE));
-
-                            if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
-                                let tex = if let Some(t) = app.browser_state.thumb_textures.get(path) {
-                                    t.clone()
-                                } else {
-                                    let key = format!("thumb_{}", path.to_string_lossy());
-                                    let t = ctx.load_texture(&key, ci.clone(), TextureOptions::LINEAR);
-                                    app.browser_state.thumb_textures.insert(path.clone(), t.clone());
-                                    t
-                                };
-                                let tex_size = tex.size_vec2();
-                                let scale =
-                                    (THUMB_SIZE / tex_size.x).min(THUMB_SIZE / tex_size.y).min(1.0);
-                                let draw_size = tex_size * scale;
-                                let offset = Vec2::new(
-                                    (THUMB_SIZE - draw_size.x) / 2.0,
-                                    (THUMB_SIZE - draw_size.y) / 2.0,
-                                );
-                                let image_rect = egui::Rect::from_min_size(
-                                    thumb_rect.min + offset,
-                                    draw_size,
-                                );
-                                ui.painter().image(
-                                    tex.id(),
-                                    image_rect,
-                                    egui::Rect::from_min_max(
-                                        egui::pos2(0.0, 0.0),
-                                        egui::pos2(1.0, 1.0),
-                                    ),
-                                    Color32::WHITE,
-                                );
-                            } else if app.browser_state.thumbnails.contains_key(path) {
-                                ui.painter().text(
-                                    thumb_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "\u{2716}",
-                                    egui::FontId::proportional(20.0),
-                                    Color32::GRAY,
-                                );
+                        if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
+                            let tex = if let Some(t) = app.browser_state.thumb_textures.get(path) {
+                                t.clone()
                             } else {
-                                ui.painter().text(
-                                    thumb_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    "...",
-                                    egui::FontId::proportional(20.0),
-                                    Color32::GRAY,
-                                );
-                            }
-
-                            let name = path
-                                .file_stem()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default();
-                            let label_rect = egui::Rect::from_min_size(
-                                rect.min + Vec2::new(0.0, THUMB_SIZE),
-                                Vec2::new(THUMB_SIZE, LABEL_HEIGHT),
+                                let key = format!("thumb_{}", path.to_string_lossy());
+                                let t = ctx.load_texture(&key, ci.clone(), TextureOptions::LINEAR);
+                                app.browser_state.thumb_textures.insert(path.clone(), t.clone());
+                                t
+                            };
+                            let tex_size = tex.size_vec2();
+                            let scale =
+                                (THUMB_SIZE / tex_size.x).min(THUMB_SIZE / tex_size.y).min(1.0);
+                            let draw_size = tex_size * scale;
+                            let offset = Vec2::new(
+                                (THUMB_SIZE - draw_size.x) / 2.0,
+                                (THUMB_SIZE - draw_size.y) / 2.0,
                             );
+                            let image_rect = egui::Rect::from_min_size(
+                                thumb_rect.min + offset,
+                                draw_size,
+                            );
+                            ui.painter().image(
+                                tex.id(),
+                                image_rect,
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                Color32::WHITE,
+                            );
+                        } else if app.browser_state.thumbnails.contains_key(path) {
                             ui.painter().text(
-                                label_rect.left_center() + Vec2::new(2.0, 0.0),
-                                egui::Align2::LEFT_CENTER,
-                                &name,
-                                egui::FontId::proportional(11.0),
-                                Color32::LIGHT_GRAY,
+                                thumb_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "\u{2716}",
+                                egui::FontId::proportional(20.0),
+                                crate::theme::DANGER,
                             );
+                        } else {
+                            ui.painter().text(
+                                thumb_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "...",
+                                egui::FontId::proportional(20.0),
+                                crate::theme::ACCENT,
+                            );
+                        }
 
-                            response.context_menu(|ui| {
-                                if ui.button("Open").clicked() {
-                                    app.switch_to_viewer(i);
-                                    ui.close_menu();
-                                }
-                                if ui.button("Delete").clicked() {
-                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::Delete { path: path.clone() });
-                                    app.scan_folder();
-                                    ui.close_menu();
-                                }
-                                if ui.button("Copy").clicked() {
-                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::Copy { path: path.clone() });
-                                    app.scan_folder();
-                                    ui.close_menu();
-                                }
-                                if ui.button("Open in system viewer").clicked() {
-                                    let _ = crate::browser::files::execute(crate::browser::files::FileOp::OpenExternal { path: path.clone() });
-                                    ui.close_menu();
-                                }
-                                ui.menu_button("Save as", |ui| {
-                                    let mut save = |fmt: &str, img_fmt: image::ImageFormat| {
-                                        if let Ok(img) = image::open(path) {
-                                            let new_name = path.with_extension(fmt);
-                                            if fmt == "jpeg" {
-                                                let mut output = std::fs::File::create(&new_name).ok();
-                                                if let Some(ref mut f) = output {
-                                                    let (w, h) = img.dimensions();
-                                                    let rgba = img.to_rgba8();
-                                                    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(f, app.editor_state.save_jpeg_quality);
-                                                    enc.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok();
-                                                }
-                                            } else {
-                                                img.save_with_format(&new_name, img_fmt).ok();
+                        // Filename label
+                        let name = path
+                            .file_stem()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let label_rect = egui::Rect::from_min_size(
+                            rect.min + Vec2::new(4.0, THUMB_SIZE),
+                            Vec2::new(THUMB_SIZE - 8.0, LABEL_HEIGHT),
+                        );
+                        let display_name = if name.len() > 18 {
+                            format!("{}…", &name[..17])
+                        } else {
+                            name
+                        };
+                        ui.painter().text(
+                            label_rect.left_center(),
+                            egui::Align2::LEFT_CENTER,
+                            &display_name,
+                            egui::FontId::proportional(11.0),
+                            crate::theme::TEXT_SECONDARY,
+                        );
+
+                        // Context menu
+                        response.context_menu(|ui| {
+                            if ui.button("Open").clicked() {
+                                app.switch_to_viewer(i);
+                                ui.close_menu();
+                            }
+                            if ui.button("Delete").clicked() {
+                                let _ = crate::browser::files::execute(crate::browser::files::FileOp::Delete { path: path.clone() });
+                                app.scan_folder();
+                                ui.close_menu();
+                            }
+                            if ui.button("Copy").clicked() {
+                                let _ = crate::browser::files::execute(crate::browser::files::FileOp::Copy { path: path.clone() });
+                                app.scan_folder();
+                                ui.close_menu();
+                            }
+                            if ui.button("Open in system viewer").clicked() {
+                                let _ = crate::browser::files::execute(crate::browser::files::FileOp::OpenExternal { path: path.clone() });
+                                ui.close_menu();
+                            }
+                            ui.menu_button("Save as", |ui| {
+                                let mut save = |fmt: &str, img_fmt: image::ImageFormat| {
+                                    if let Ok(img) = image::open(path) {
+                                        let new_name = path.with_extension(fmt);
+                                        if fmt == "jpeg" {
+                                            let mut output = std::fs::File::create(&new_name).ok();
+                                            if let Some(ref mut f) = output {
+                                                let (w, h) = img.dimensions();
+                                                let rgba = img.to_rgba8();
+                                                let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(f, app.editor_state.save_jpeg_quality);
+                                                enc.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok();
                                             }
-                                            app.scan_folder();
+                                        } else {
+                                            img.save_with_format(&new_name, img_fmt).ok();
                                         }
-                                    };
-                                    if ui.button("PNG").clicked() { save("png", image::ImageFormat::Png); ui.close_menu(); }
-                                    if ui.button("JPEG").clicked() { save("jpeg", image::ImageFormat::Jpeg); ui.close_menu(); }
-                                    if ui.button("BMP").clicked() { save("bmp", image::ImageFormat::Bmp); ui.close_menu(); }
-                                    if ui.button("WEBP").clicked() { save("webp", image::ImageFormat::WebP); ui.close_menu(); }
-                                });
+                                        app.scan_folder();
+                                    }
+                                };
+                                if ui.button("PNG").clicked() { save("png", image::ImageFormat::Png); ui.close_menu(); }
+                                if ui.button("JPEG").clicked() { save("jpeg", image::ImageFormat::Jpeg); ui.close_menu(); }
+                                if ui.button("BMP").clicked() { save("bmp", image::ImageFormat::Bmp); ui.close_menu(); }
+                                if ui.button("WEBP").clicked() { save("webp", image::ImageFormat::WebP); ui.close_menu(); }
                             });
-
-                            if response.double_clicked() {
-                                thumb_clicked = true;
-                            }
-                            if response.clicked() {
-                                thumb_selected = true;
-                            }
                         });
 
-                        if thumb_clicked {
+                        // Selection + double-click
+                        if response.double_clicked() {
                             app.switch_to_viewer(i);
                             return;
                         }
-                        if thumb_selected {
+                        if response.clicked() {
                             app.browser_state.selected_thumb = Some(i);
                         }
                     }
@@ -280,44 +310,63 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            egui::Grid::new("list_grid")
-                .striped(true)
-                .spacing([8.0, 2.0])
-                .min_col_width(80.0)
-                .show(ui, |ui| {
-                    ui.strong("Name");
-                    ui.strong("Dimensions");
-                    ui.strong("Size");
+            // Column headers
+            ui.horizontal(|ui| {
+                ui.allocate_space(Vec2::new(24.0, 0.0)); // icon column
+                ui.strong("Name");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.strong("Date");
-                    ui.end_row();
+                    ui.add_space(16.0);
+                    ui.strong("Size");
+                    ui.add_space(16.0);
+                    ui.strong("Dimensions");
+                    ui.add_space(16.0);
+                });
+            });
+            ui.separator();
 
-                    for (i, path) in paths.iter().enumerate() {
-                        let is_selected = app.browser_state.selected_thumb == Some(i);
-                        let label = egui::RichText::new(
-                            path.file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                        )
-                        .color(if is_selected {
-                            Color32::WHITE
-                        } else {
-                            Color32::LIGHT_GRAY
-                        });
+            for (i, path) in paths.iter().enumerate() {
+                let is_selected = app.browser_state.selected_thumb == Some(i);
+                let row_bg = if is_selected {
+                    crate::theme::SELECTED_BG
+                } else if i % 2 == 0 {
+                    crate::theme::PANEL_BG
+                } else {
+                    crate::theme::CARD_BG
+                };
 
-                        if ui.selectable_label(is_selected, label).clicked() {
-                            app.browser_state.selected_thumb = Some(i);
-                        }
-                        if ui
-                            .selectable_label(is_selected, "-")
-                            .double_clicked()
-                        {
-                            app.switch_to_viewer(i);
-                            return;
-                        }
+                let (rect, response) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), 24.0),
+                    egui::Sense::click(),
+                );
 
+                // Row background
+                let actual_bg = if response.hovered() && !is_selected {
+                    crate::theme::HOVER_BG
+                } else {
+                    row_bg
+                };
+                ui.painter().rect_filled(rect, CornerRadius::same(2), actual_bg);
+
+                // Content inside row
+                let inner = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 24.0));
+                let mut child_ui = ui.child_ui(inner, *ui.layout(), None);
+                child_ui.horizontal(|ui| {
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("\u{1F5BC}").size(12.0).color(crate::theme::TEXT_SECONDARY));
+                    ui.add_space(4.0);
+                    let name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    ui.colored_label(
+                        if is_selected { crate::theme::TEXT_PRIMARY } else { crate::theme::TEXT_SECONDARY },
+                        &name,
+                    );
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let meta = std::fs::metadata(path).ok();
                         if let Some(ref m) = meta {
-                            ui.label(format_size(m.len()));
+                            // Date (rightmost)
                             if let Ok(modified) = m.modified() {
                                 if let Ok(dt) = modified.duration_since(std::time::UNIX_EPOCH) {
                                     let secs = dt.as_secs();
@@ -325,20 +374,33 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                                     let time = secs % 86400;
                                     let h = time / 3600;
                                     let min = (time % 3600) / 60;
-                                    ui.label(format!("{days}d {h:02}:{min:02}"));
+                                    ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{days}d {h:02}:{min:02}"));
                                 } else {
-                                    ui.label("-");
+                                    ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
                                 }
                             } else {
-                                ui.label("-");
+                                ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
                             }
+                            // Size (middle)
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, format_size(m.len()));
+                            // Dimensions (leftmost)
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
                         } else {
-                            ui.label("-");
-                            ui.label("-");
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
                         }
-                        ui.end_row();
-                    }
+                    });
                 });
+
+                if response.double_clicked() {
+                    app.switch_to_viewer(i);
+                    return;
+                }
+                if response.clicked() {
+                    app.browser_state.selected_thumb = Some(i);
+                }
+            }
         });
 }
 
