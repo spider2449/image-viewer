@@ -44,7 +44,7 @@ impl App {
         cc.egui_ctx.set_style(crate::theme::theme_style());
 
         let config = Config::load();
-        let thumbnail_cache = ThumbnailCache::new(512, 4);
+        let thumbnail_cache = ThumbnailCache::new(512, 4, None);
         let browser_state = browser::State::new();
         let viewer_state = viewer::State::new();
 

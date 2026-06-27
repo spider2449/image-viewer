@@ -1,3 +1,4 @@
+use crate::disk_cache::DiskCache;
 use egui::ColorImage;
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -28,10 +29,11 @@ pub struct ThumbnailCache {
     pending: Arc<Mutex<Vec<PathBuf>>>,
     sender: Sender<ThumbnailRequest>,
     receiver: Receiver<ThumbnailResult>,
+    disk_cache: Option<Arc<DiskCache>>,
 }
 
 impl ThumbnailCache {
-    pub fn new(capacity: usize, worker_count: usize) -> Self {
+    pub fn new(capacity: usize, worker_count: usize, disk_cache: Option<DiskCache>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<ThumbnailRequest>();
         let (res_tx, res_rx) = mpsc::channel::<ThumbnailResult>();
 
@@ -40,12 +42,14 @@ impl ThumbnailCache {
         ));
         let pending: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
 
+        let disk_cache = disk_cache.map(Arc::new);
         let req_rx = Arc::new(Mutex::new(req_rx));
 
         for _ in 0..worker_count.max(1) {
             let cache_clone = cache.clone();
             let res_tx = res_tx.clone();
             let req_rx = req_rx.clone();
+            let dc = disk_cache.clone();
 
             thread::spawn(move || {
                 loop {
@@ -60,31 +64,60 @@ impl ThumbnailCache {
                     match req {
                         Some(req) => {
                             let start = Instant::now();
-                            let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
-                            match result {
-                                Ok((ci, w, h)) => {
+
+                            // Check disk cache first
+                            let from_disk = dc.as_ref()
+                                .and_then(|d| d.lookup(&req.path, req.max_size));
+
+                            let result = match from_disk {
+                                Some(ci) => {
+                                    let w = ci.size[0] as u32;
+                                    let h = ci.size[1] as u32;
                                     {
                                         let mut c = cache_clone.lock().unwrap();
                                         c.put(req.path.clone(), (ci.clone(), w, h));
                                     }
-                                    res_tx.send(ThumbnailResult {
+                                    ThumbnailResult {
                                         path: req.path,
                                         image: Some(ci),
                                         full_width: w,
                                         full_height: h,
                                         load_time: start.elapsed(),
-                                    }).ok();
+                                    }
                                 }
-                                Err(_) => {
-                                    res_tx.send(ThumbnailResult {
-                                        path: req.path,
-                                        image: None,
-                                        full_width: 0,
-                                        full_height: 0,
-                                        load_time: start.elapsed(),
-                                    }).ok();
+                                None => {
+                                    let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
+                                    match result {
+                                        Ok((ci, w, h)) => {
+                                            // Store to disk
+                                            if let Some(ref d) = dc {
+                                                d.store(&req.path, req.max_size, &ci);
+                                            }
+                                            {
+                                                let mut c = cache_clone.lock().unwrap();
+                                                c.put(req.path.clone(), (ci.clone(), w, h));
+                                            }
+                                            ThumbnailResult {
+                                                path: req.path,
+                                                image: Some(ci),
+                                                full_width: w,
+                                                full_height: h,
+                                                load_time: start.elapsed(),
+                                            }
+                                        }
+                                        Err(_) => {
+                                            ThumbnailResult {
+                                                path: req.path,
+                                                image: None,
+                                                full_width: 0,
+                                                full_height: 0,
+                                                load_time: start.elapsed(),
+                                            }
+                                        }
+                                    }
                                 }
-                            }
+                            };
+                            res_tx.send(result).ok();
                         }
                         None => {
                             thread::sleep(Duration::from_millis(10));
@@ -99,6 +132,7 @@ impl ThumbnailCache {
             pending,
             sender: req_tx,
             receiver: res_rx,
+            disk_cache,
         }
     }
 
@@ -125,5 +159,11 @@ impl ThumbnailCache {
     #[allow(dead_code)]
     pub fn get_cached(&self, path: &PathBuf) -> Option<(ColorImage, u32, u32)> {
         self.cache.lock().unwrap().get(path).cloned()
+    }
+
+    pub fn clear_disk_cache(&self) {
+        if let Some(ref dc) = self.disk_cache {
+            dc.clear_all();
+        }
     }
 }
