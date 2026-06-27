@@ -63,13 +63,27 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     egui::SidePanel::right("editor_panel")
         .resizable(true)
+        .frame(egui::Frame {
+            fill: crate::theme::PANEL_BG,
+            inner_margin: egui::Margin::symmetric(8, 8),
+            ..Default::default()
+        })
         .default_width(250.0)
         .min_width(200.0)
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("Edit");
+                // Header
+                ui.horizontal(|ui| {
+                    ui.heading("Edit");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("X").clicked() {
+                            app.editor_state.visible = false;
+                        }
+                    });
+                });
                 ui.separator();
 
+                // Undo/Redo
                 ui.horizontal(|ui| {
                     let can_undo = !app.editor_state.undo_stack.is_empty();
                     if ui.add_enabled(can_undo, egui::Button::new("\u{21A9} Undo")).clicked() {
@@ -79,14 +93,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     if ui.add_enabled(can_redo, egui::Button::new("\u{21AA} Redo")).clicked() {
                         redo(app, ctx);
                     }
-                    if ui.button("X").clicked() {
-                        app.editor_state.visible = false;
-                    }
                 });
 
                 ui.separator();
 
-                // Crop
+                // Crop section
+                ui.label(egui::RichText::new("Crop").strong().color(crate::theme::ACCENT));
                 if ui.selectable_label(app.editor_state.crop_active, "Crop").clicked() {
                     app.editor_state.crop_active = !app.editor_state.crop_active;
                     if !app.editor_state.crop_active {
@@ -107,7 +119,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 ui.separator();
 
-                ui.label("Transform");
+                // Transform section
+                ui.label(egui::RichText::new("Transform").strong().color(crate::theme::ACCENT));
                 if ui.button("Rotate 90\u{00B0} CW").clicked() {
                     apply_op(app, ctx, EditOp::Rotate90Cw);
                 }
@@ -128,16 +141,17 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 ui.separator();
 
-                ui.label("Resize");
+                // Resize section
+                ui.label(egui::RichText::new("Resize").strong().color(crate::theme::ACCENT));
                 ui.horizontal(|ui| {
-                    ui.label("W:");
+                    ui.colored_label(crate::theme::TEXT_SECONDARY, "W:");
                     let mut w = app.editor_state.resize_width as f32;
                     if ui.add(egui::DragValue::new(&mut w).range(1..=16384)).changed() {
                         app.editor_state.resize_width = w as u32;
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label("H:");
+                    ui.colored_label(crate::theme::TEXT_SECONDARY, "H:");
                     let mut h = app.editor_state.resize_height as f32;
                     if ui.add(egui::DragValue::new(&mut h).range(1..=16384)).changed() {
                         app.editor_state.resize_height = h as u32;
@@ -153,7 +167,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 ui.separator();
 
-                ui.label("Save As");
+                // Save As section
+                ui.label(egui::RichText::new("Save As").strong().color(crate::theme::ACCENT));
                 egui::ComboBox::new("save_format", "")
                     .selected_text(app.editor_state.save_format)
                     .show_ui(ui, |ui| {
