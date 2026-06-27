@@ -351,20 +351,6 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             });
             x += GAP;
 
-            // Dimensions header + drag handle
-            ui.painter().text(
-                egui::pos2(x + 4.0, header_y + header_h / 2.0),
-                egui::Align2::LEFT_CENTER,
-                "Dimensions",
-                egui::FontId::proportional(14.0),
-                crate::theme::TEXT_PRIMARY,
-            );
-            x += widths.dimensions;
-            x = drag_handle(ui, egui::Id::new("drag_dims"), x, header_y, header_h, HANDLE_W, |d| {
-                app.config.column_widths.dimensions = (app.config.column_widths.dimensions + d).max(MIN_W);
-            });
-            x += GAP;
-
             // Size header + drag handle
             ui.painter().text(
                 egui::pos2(x + 4.0, header_y + header_h / 2.0),
@@ -447,16 +433,6 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 );
                 x += widths.name + GAP;
 
-                // Dimensions
-                ui.painter().text(
-                    egui::pos2(x + widths.dimensions - 4.0, cy),
-                    egui::Align2::RIGHT_CENTER,
-                    "-",
-                    egui::FontId::proportional(12.0),
-                    crate::theme::TEXT_SECONDARY,
-                );
-                x += widths.dimensions + GAP;
-
                 // Size
                 let meta = std::fs::metadata(path).ok();
                 let size_str = meta.as_ref()
@@ -506,21 +482,17 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
 fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
     let name = cw.name.max(min_w);
-    let dimensions = cw.dimensions.max(min_w);
     let size = cw.size.max(min_w);
     let mut date = cw.date.max(min_w);
-    let fixed = icon_w + name + gap + dimensions + gap + size + gap;
+    let fixed = icon_w + name + gap + size + gap;
     if fixed + date < available {
         date += available - fixed - date;
-    } else if fixed + date > available {
-        // Don't shrink below min_w; let it overflow horizontally
     }
-    ColumnWidthSet { name, dimensions, size, date }
+    ColumnWidthSet { name, size, date }
 }
 
 struct ColumnWidthSet {
     name: f32,
-    dimensions: f32,
     size: f32,
     date: f32,
 }

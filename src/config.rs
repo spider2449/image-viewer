@@ -4,7 +4,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnWidths {
     pub name: f32,
-    pub dimensions: f32,
     pub size: f32,
     pub date: f32,
 }
@@ -13,7 +12,6 @@ impl Default for ColumnWidths {
     fn default() -> Self {
         Self {
             name: 200.0,
-            dimensions: 100.0,
             size: 80.0,
             date: 150.0,
         }
