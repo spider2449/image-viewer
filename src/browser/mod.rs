@@ -35,14 +35,10 @@ impl State {
 pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.browser_state.tree_nodes.is_empty() {
         let roots: Vec<PathBuf> = if cfg!(windows) {
-            vec![
-                PathBuf::from("C:\\"),
-                PathBuf::from("D:\\"),
-                PathBuf::from("E:\\"),
-            ]
-            .into_iter()
-            .filter(|p| p.exists())
-            .collect()
+            (b'A'..=b'Z')
+                .map(|c| PathBuf::from(format!(r"{}:\", c as char)))
+                .filter(|p| p.exists())
+                .collect()
         } else {
             std::fs::read_dir("/")
                 .ok()
