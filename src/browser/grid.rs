@@ -350,6 +350,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
                 // Content inside row
                 let inner = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 24.0));
+                #[allow(deprecated)]
                 let mut child_ui = ui.child_ui(inner, *ui.layout(), None);
                 child_ui.horizontal(|ui| {
                     ui.add_space(4.0);

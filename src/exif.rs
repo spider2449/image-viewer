@@ -191,6 +191,7 @@ pub fn show(data: &mut ExifData, ctx: &egui::Context) {
                         egui::Sense::hover(),
                     );
                     ui.painter().rect_filled(rect, egui::CornerRadius::same(0), row_bg);
+                    #[allow(deprecated)]
                     let mut child_ui = ui.child_ui(rect, *ui.layout(), None);
                     child_ui.horizontal(|ui| {
                         ui.colored_label(crate::theme::ACCENT, format!("{label}:"));

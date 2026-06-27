@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, CornerRadius, Stroke, Style, Visuals, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Style, Visuals, Vec2};
 
 // ── Color palette ──────────────────────────────────────────
 pub const BG_DARK: Color32 = Color32::from_rgb(0x1a, 0x1a, 0x1a);
@@ -11,7 +11,6 @@ pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xe0, 0xe0, 0xe0);
 pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(0x88, 0x88, 0x88);
 pub const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
 pub const DANGER: Color32 = Color32::from_rgb(0xe7, 0x4c, 0x3c);
-pub const SUCCESS: Color32 = Color32::from_rgb(0x2e, 0xcc, 0x71);
 
 // ── Convenient icon wrapper ────────────────────────────────
 pub fn styled_icon(codepoint: &str) -> egui::RichText {
@@ -93,6 +92,7 @@ pub fn theme_style() -> Style {
                 bar_width: 6.0,
                 ..Default::default()
             },
+            window_margin: Margin::same(12),
             ..Default::default()
         },
         interaction: egui::style::Interaction {
