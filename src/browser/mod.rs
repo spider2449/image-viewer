@@ -56,40 +56,45 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let tree_w = app.browser_state.tree_width.max(120.0);
+        let full_rect = ui.max_rect();
 
-        ui.horizontal(|ui| {
-            // Tree panel
-            let tree_h = ui.available_height();
-            let (tree_rect, _) = ui.allocate_exact_size(
-                egui::Vec2::new(tree_w, tree_h),
-                egui::Sense::hover(),
-            );
+        // ── Tree panel (left side) ──────────────────────────
+        let tree_rect = egui::Rect::from_min_size(
+            full_rect.min,
+            egui::vec2(tree_w, full_rect.height()),
+        );
+        ui.painter().rect_filled(tree_rect, egui::CornerRadius::same(0), crate::theme::PANEL_BG);
 
-            ui.painter().rect_filled(tree_rect, egui::CornerRadius::same(0), crate::theme::PANEL_BG);
-            #[allow(deprecated)]
-            ui.allocate_ui_at_rect(tree_rect.shrink2(egui::vec2(4.0, 4.0)), |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    tree::show_tree(app, ui);
-                });
+        #[allow(deprecated)]
+        ui.allocate_ui_at_rect(tree_rect.shrink2(egui::vec2(4.0, 4.0)), |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                tree::show_tree(app, ui);
             });
+        });
 
-            // Resize handle
-            let handle_x = tree_rect.right();
-            let handle_rect = egui::Rect::from_min_size(
-                egui::pos2(handle_x - 3.0, tree_rect.top()),
-                egui::vec2(6.0, tree_rect.height()),
-            );
-            let resp = ui.interact(handle_rect, egui::Id::new("tree_resize"), egui::Sense::click_and_drag());
-            if resp.dragged() {
-                app.browser_state.tree_width = (app.browser_state.tree_width + resp.drag_delta().x).max(120.0);
-            }
-            if resp.drag_started() || resp.dragged() || resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
-            }
+        // ── Resize handle ───────────────────────────────────
+        let handle_x = tree_rect.right();
+        let handle_rect = egui::Rect::from_min_size(
+            egui::pos2(handle_x - 3.0, tree_rect.top()),
+            egui::vec2(6.0, tree_rect.height()),
+        );
+        let resp = ui.interact(handle_rect, egui::Id::new("tree_resize"), egui::Sense::click_and_drag());
+        if resp.dragged() {
+            app.browser_state.tree_width = (app.browser_state.tree_width + resp.drag_delta().x).max(120.0);
+        }
+        if resp.drag_started() || resp.dragged() || resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
+        }
 
-            ui.painter().vline(handle_x, tree_rect.top()..=tree_rect.bottom(), egui::Stroke::new(1.0, crate::theme::BORDER));
+        ui.painter().vline(handle_x, tree_rect.top()..=tree_rect.bottom(), egui::Stroke::new(1.0, crate::theme::BORDER));
 
-            // Thumbnails / list view takes remaining space
+        // ── Grid / list view (right side) ───────────────────
+        let grid_rect = egui::Rect::from_min_size(
+            egui::pos2(handle_x + 1.0, full_rect.top()),
+            egui::vec2((full_rect.width() - tree_w - 1.0).max(0.0), full_rect.height()),
+        );
+        #[allow(deprecated)]
+        ui.allocate_ui_at_rect(grid_rect, |ui| {
             grid::show_grid(app, ui);
         });
     });
