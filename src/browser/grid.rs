@@ -8,8 +8,10 @@ const THUMB_PADDING: f32 = 8.0;
 const LABEL_HEIGHT: f32 = 30.0;
 
 pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
+    // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
-        if ui.button("\u{25C0} Back").clicked() {
+        ui.label(crate::theme::styled_icon("\u{25C0}"));
+        if ui.button("Back").clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
                     app.current_folder = Some(parent.to_path_buf());
@@ -17,7 +19,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
         }
-        if ui.button("\u{25B6} Up").clicked() {
+        if ui.button("Up").clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
                     app.current_folder = Some(parent.to_path_buf());
@@ -58,7 +60,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             app.scan_folder();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(format!("{} files", app.image_files.len()));
+            ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{} files", app.image_files.len()));
         });
     });
 

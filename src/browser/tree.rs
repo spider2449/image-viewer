@@ -1,5 +1,5 @@
 use crate::app::App;
-use eframe::egui::{Color32, CursorIcon, Ui};
+use eframe::egui::Ui;
 use std::path::PathBuf;
 
 #[derive(Clone)]
@@ -90,49 +90,73 @@ fn show_node(
 
     let indent = depth as f32 * 16.0;
     let has_children = node.has_subdirs || !node.children.is_empty();
-
     let expanded = app.browser_state.expanded_paths.contains(&node.path);
 
-    ui.horizontal(|ui| {
-        ui.add_space(indent);
+    let bg = if is_selected {
+        crate::theme::SELECTED_BG
+    } else {
+        crate::theme::PANEL_BG
+    };
 
-        if has_children {
-            let expand_label = if expanded { "\u{25BC} " } else { "\u{25B6} " };
-            if ui.selectable_label(false, expand_label).clicked() {
-                if expanded {
-                    app.browser_state.expanded_paths.retain(|p| p != &node.path);
-                } else {
-                    app.browser_state.expanded_paths.push(node.path.clone());
-                    if node.children.is_empty() {
-                        if let Some(idx) = app
-                            .browser_state
-                            .tree_nodes
-                            .iter()
-                            .position(|n| n.path == node.path)
-                        {
-                            if let Some(new_node) = build_node(&node.path, 1) {
-                                app.browser_state.tree_nodes[idx] = new_node;
+    let response = egui::Frame {
+        fill: bg,
+        corner_radius: egui::CornerRadius::same(4),
+        inner_margin: egui::Margin::symmetric(2, 2),
+        ..Default::default()
+    }
+    .show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_space(indent);
+
+            if has_children {
+                let expand_label = if expanded { "\u{25BC} " } else { "\u{25B6} " };
+                if ui.selectable_label(false, expand_label).clicked() {
+                    if expanded {
+                        app.browser_state.expanded_paths.retain(|p| p != &node.path);
+                    } else {
+                        app.browser_state.expanded_paths.push(node.path.clone());
+                        if node.children.is_empty() {
+                            if let Some(idx) = app
+                                .browser_state
+                                .tree_nodes
+                                .iter()
+                                .position(|n| n.path == node.path)
+                            {
+                                if let Some(new_node) = build_node(&node.path, 1) {
+                                    app.browser_state.tree_nodes[idx] = new_node;
+                                }
                             }
                         }
                     }
                 }
+            } else {
+                ui.add_space(16.0);
             }
-        } else {
-            ui.add_space(16.0);
-        }
 
-        let label = if is_selected {
-            ui.colored_label(Color32::from_rgb(0, 120, 215), &node.name)
-                .on_hover_cursor(CursorIcon::PointingHand)
-        } else {
-            ui.label(&node.name)
-                .on_hover_cursor(CursorIcon::PointingHand)
-        };
+            ui.label("\u{1F4C1}"); // folder icon
+            ui.add_space(4.0);
 
-        if label.clicked() {
-            *click_folder = Some(node.path.clone());
-        }
+            let label_color = if is_selected {
+                crate::theme::TEXT_PRIMARY
+            } else {
+                crate::theme::TEXT_SECONDARY
+            };
+            let label = ui.colored_label(label_color, &node.name)
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+            if label.clicked() {
+                *click_folder = Some(node.path.clone());
+            }
+        });
     });
+
+    if !is_selected && response.response.hovered() {
+        ui.painter().rect_filled(
+            response.response.rect,
+            egui::CornerRadius::same(4),
+            egui::Color32::from_white_alpha(8),
+        );
+    }
 
     if expanded {
         for child in &node.children {

@@ -58,6 +58,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     egui::SidePanel::left("folder_tree")
         .resizable(true)
+        .frame(egui::Frame {
+            fill: crate::theme::PANEL_BG,
+            inner_margin: egui::Margin::symmetric(4, 4),
+            ..Default::default()
+        })
         .default_width(200.0)
         .min_width(120.0)
         .show(ctx, |ui| {
