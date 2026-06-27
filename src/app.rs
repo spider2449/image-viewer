@@ -40,6 +40,8 @@ impl App {
                 .insert(0, "cjk".to_owned());
         }
         cc.egui_ctx.set_fonts(fonts);
+        cc.egui_ctx.set_visuals(crate::theme::theme_visuals());
+        cc.egui_ctx.set_style(crate::theme::theme_style());
 
         let config = Config::load();
         let thumbnail_cache = ThumbnailCache::new(512, 4);
@@ -177,57 +179,65 @@ impl eframe::App for App {
             }
         }
 
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Refresh").clicked() {
-                        self.scan_folder();
-                        ui.close_menu();
-                    }
-                    if ui.button("Exit").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    ui.menu_button("Sort by", |ui| {
-                        let mut sort_changed = false;
-                        sort_changed |= ui.selectable_value(&mut self.config.sort_by, "name".to_string(), "Name").changed();
-                        sort_changed |= ui.selectable_value(&mut self.config.sort_by, "date".to_string(), "Date").changed();
-                        sort_changed |= ui.selectable_value(&mut self.config.sort_by, "size".to_string(), "Size").changed();
-                        if sort_changed {
+        egui::TopBottomPanel::top("menu_bar")
+            .frame(egui::Frame {
+                fill: crate::theme::PANEL_BG,
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                egui::menu::bar(ui, |ui| {
+                    ui.style_mut().visuals.widgets.inactive.bg_fill = crate::theme::PANEL_BG;
+                    ui.menu_button("File", |ui| {
+                        if ui.button("Refresh").clicked() {
                             self.scan_folder();
+                            ui.close_menu();
+                        }
+                        if ui.button("Exit").clicked() {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
-                    if ui.button("Toggle sort direction").clicked() {
-                        self.config.sort_descending = !self.config.sort_descending;
-                        self.scan_folder();
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Toggle Grid/List").clicked() {
-                        self.browser_state.show_list_view = !self.browser_state.show_list_view;
-                        ui.close_menu();
-                    }
+                    ui.menu_button("View", |ui| {
+                        ui.menu_button("Sort by", |ui| {
+                            let mut sort_changed = false;
+                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "name".to_string(), "Name").changed();
+                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "date".to_string(), "Date").changed();
+                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "size".to_string(), "Size").changed();
+                            if sort_changed {
+                                self.scan_folder();
+                            }
+                        });
+                        if ui.button("Toggle sort direction").clicked() {
+                            self.config.sort_descending = !self.config.sort_descending;
+                            self.scan_folder();
+                            ui.close_menu();
+                        }
+                        ui.separator();
+                        if ui.button("Toggle Grid/List").clicked() {
+                            self.browser_state.show_list_view = !self.browser_state.show_list_view;
+                            ui.close_menu();
+                        }
+                    });
+                    ui.menu_button("Tools", |ui| {
+                        if ui.button("Batch Convert").clicked() {
+                            self.batch_state.mode = batch::BatchMode::Convert;
+                            self.batch_state.open(&self.image_files);
+                            ui.close_menu();
+                        }
+                        if ui.button("Batch Rename").clicked() {
+                            self.batch_state.mode = batch::BatchMode::Rename;
+                            self.batch_state.open(&self.image_files);
+                            ui.close_menu();
+                        }
+                        if ui.button("Batch Resize").clicked() {
+                            self.batch_state.mode = batch::BatchMode::Resize;
+                            self.batch_state.open(&self.image_files);
+                            ui.close_menu();
+                        }
+                    });
                 });
-                ui.menu_button("Tools", |ui| {
-                    if ui.button("Batch Convert").clicked() {
-                        self.batch_state.mode = batch::BatchMode::Convert;
-                        self.batch_state.open(&self.image_files);
-                        ui.close_menu();
-                    }
-                    if ui.button("Batch Rename").clicked() {
-                        self.batch_state.mode = batch::BatchMode::Rename;
-                        self.batch_state.open(&self.image_files);
-                        ui.close_menu();
-                    }
-                    if ui.button("Batch Resize").clicked() {
-                        self.batch_state.mode = batch::BatchMode::Resize;
-                        self.batch_state.open(&self.image_files);
-                        ui.close_menu();
-                    }
-                });
+                // Accent bottom border
+                ui.separator();
             });
-        });
 
         match self.mode {
             Mode::Browser => {
