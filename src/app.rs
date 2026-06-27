@@ -1,6 +1,7 @@
 use crate::batch;
 use crate::browser;
 use crate::config::Config;
+use crate::disk_cache::DiskCache;
 use crate::editor;
 use crate::exif;
 use crate::thumbnail_cache::ThumbnailCache;
@@ -44,7 +45,9 @@ impl App {
         cc.egui_ctx.set_style(crate::theme::theme_style());
 
         let config = Config::load();
-        let thumbnail_cache = ThumbnailCache::new(512, 4, None);
+        let cache_dir = Self::cache_dir();
+        let disk_cache = DiskCache::new(cache_dir.join("thumbnails"));
+        let thumbnail_cache = ThumbnailCache::new(512, 4, Some(disk_cache));
         let browser_state = browser::State::new();
         let viewer_state = viewer::State::new();
 
@@ -74,8 +77,17 @@ impl App {
         app
     }
 
+    fn cache_dir() -> PathBuf {
+        let mut p = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+        p.pop();
+        p.push("cache");
+        p
+    }
+
     pub fn scan_folder(&mut self) {
         self.textures.clear();
+        self.browser_state.thumbnails.clear();
+        self.browser_state.thumb_textures.clear();
         let folder = match &self.current_folder {
             Some(f) => f.clone(),
             None => return,
@@ -124,8 +136,10 @@ impl App {
 
         self.image_files = files;
 
+        let decode_size = ((self.config.thumb_size * 1.5).ceil() as u32).max(200);
+        self.browser_state.thumb_decode_size = decode_size;
         for path in &self.image_files {
-            self.thumbnail_cache.request(path.clone(), 200);
+            self.thumbnail_cache.request(path.clone(), decode_size);
         }
     }
 
@@ -173,9 +187,10 @@ impl eframe::App for App {
             self.browser_state.thumbnails.insert(result.path, result.image);
         }
 
+        let decode_size = ((self.config.thumb_size * 1.5).ceil() as u32).max(200);
         for path in &self.image_files {
             if !self.browser_state.thumbnails.contains_key(path) {
-                self.thumbnail_cache.request(path.clone(), 200);
+                self.thumbnail_cache.request(path.clone(), decode_size);
             }
         }
 
@@ -189,6 +204,13 @@ impl eframe::App for App {
                     ui.style_mut().visuals.widgets.inactive.bg_fill = crate::theme::PANEL_BG;
                     ui.menu_button("File", |ui| {
                         if ui.button("Refresh").clicked() {
+                            self.scan_folder();
+                            ui.close_menu();
+                        }
+                        if ui.button("Clear thumbnail cache").clicked() {
+                            self.thumbnail_cache.clear_disk_cache();
+                            self.browser_state.thumbnails.clear();
+                            self.browser_state.thumb_textures.clear();
                             self.scan_folder();
                             ui.close_menu();
                         }

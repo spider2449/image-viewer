@@ -114,7 +114,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             app.browser_state.thumbnails.clear();
             app.browser_state.thumb_textures.clear();
             for path in &app.image_files {
-                // thumbnail_cache.request will be wired in Task 4 — skip for now
+                app.thumbnail_cache.request(path.clone(), new_decode);
             }
         }
     }
