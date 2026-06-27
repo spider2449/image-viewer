@@ -312,7 +312,10 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     const MIN_W: f32 = 60.0;
     const HANDLE_W: f32 = 8.0;
 
-    egui::ScrollArea::vertical()
+    egui::ScrollArea::horizontal()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let available = ui.available_width();
@@ -385,6 +388,10 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 crate::theme::TEXT_PRIMARY,
             );
 
+            if ui.input(|i| i.pointer.any_released()) {
+                app.config.save();
+            }
+
             ui.separator();
 
             // ── Rows ────────────────────────────────────────
@@ -451,8 +458,8 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 x += widths.dimensions + GAP;
 
                 // Size
-                let size_str = std::fs::metadata(path)
-                    .ok()
+                let meta = std::fs::metadata(path).ok();
+                let size_str = meta.as_ref()
                     .map(|m| format_size(m.len()))
                     .unwrap_or_else(|| "-".to_string());
                 ui.painter().text(
@@ -465,8 +472,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 x += widths.size + GAP;
 
                 // Date
-                let date_str = std::fs::metadata(path)
-                    .ok()
+                let date_str = meta.as_ref()
                     .and_then(|m| m.modified().ok())
                     .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|dt| {
@@ -495,6 +501,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
         });
+    });
 }
 
 fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
@@ -505,6 +512,8 @@ fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min
     let fixed = icon_w + name + gap + dimensions + gap + size + gap;
     if fixed + date < available {
         date += available - fixed - date;
+    } else if fixed + date > available {
+        // Don't shrink below min_w; let it overflow horizontally
     }
     ColumnWidthSet { name, dimensions, size, date }
 }
