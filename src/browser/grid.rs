@@ -346,7 +346,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 crate::theme::TEXT_PRIMARY,
             );
             x += widths.name;
-            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+            x = drag_handle(ui, egui::Id::new("drag_name"), x, header_y, header_h, HANDLE_W, |d| {
                 app.config.column_widths.name = (app.config.column_widths.name + d).max(MIN_W);
             });
             x += GAP;
@@ -360,7 +360,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 crate::theme::TEXT_PRIMARY,
             );
             x += widths.dimensions;
-            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+            x = drag_handle(ui, egui::Id::new("drag_dims"), x, header_y, header_h, HANDLE_W, |d| {
                 app.config.column_widths.dimensions = (app.config.column_widths.dimensions + d).max(MIN_W);
             });
             x += GAP;
@@ -374,7 +374,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 crate::theme::TEXT_PRIMARY,
             );
             x += widths.size;
-            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+            x = drag_handle(ui, egui::Id::new("drag_size"), x, header_y, header_h, HANDLE_W, |d| {
                 app.config.column_widths.size = (app.config.column_widths.size + d).max(MIN_W);
             });
             x += GAP;
@@ -527,6 +527,7 @@ struct ColumnWidthSet {
 
 fn drag_handle(
     ui: &mut egui::Ui,
+    id: egui::Id,
     x: f32,
     header_y: f32,
     header_h: f32,
@@ -537,7 +538,7 @@ fn drag_handle(
         egui::pos2(x - handle_w / 2.0, header_y),
         egui::vec2(handle_w, header_h),
     );
-    let resp = ui.interact(handle_rect, ui.next_auto_id(), egui::Sense::click_and_drag());
+    let resp = ui.interact(handle_rect, id, egui::Sense::click_and_drag());
 
     ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0, crate::theme::BORDER));
 
