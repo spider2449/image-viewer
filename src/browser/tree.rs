@@ -127,7 +127,7 @@ fn show_node(
             ui.add_space(indent);
 
             if has_children {
-                let expand_label = if expanded { "\u{25BC} " } else { "\u{25B6} " };
+                let expand_label = if expanded { "\u{25BC}" } else { "\u{25B6}" };
                 if ui.selectable_label(false, expand_label).clicked() {
                     if expanded {
                         app.browser_state.expanded_paths.retain(|p| p != &node.path);
@@ -142,13 +142,24 @@ fn show_node(
                 ui.add_space(16.0);
             }
 
-            ui.label("\u{1F4C1}"); // folder icon
+            let icon_color = if depth == 0 {
+                crate::theme::ACCENT
+            } else if depth == 1 {
+                egui::Color32::from_rgb(0xf0, 0xc0, 0x40)
+            } else {
+                egui::Color32::from_rgb(0x80, 0xc0, 0x80)
+            };
+            ui.label(egui::RichText::new("\u{1F4C1}").color(icon_color));
             ui.add_space(4.0);
 
             let label_color = if is_selected {
                 crate::theme::TEXT_PRIMARY
+            } else if depth == 0 {
+                crate::theme::ACCENT
+            } else if depth == 1 {
+                egui::Color32::from_rgb(0xe0, 0xe0, 0xc0)
             } else {
-                crate::theme::TEXT_SECONDARY
+                egui::Color32::from_rgb(0xc0, 0xd0, 0xc0)
             };
             let label = ui.colored_label(label_color, &node.name)
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -163,7 +174,7 @@ fn show_node(
         ui.painter().rect_filled(
             response.response.rect,
             egui::CornerRadius::same(4),
-            egui::Color32::from_white_alpha(8),
+            egui::Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 20),
         );
     }
 
