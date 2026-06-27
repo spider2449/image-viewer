@@ -129,7 +129,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     if app.batch_state.convert_format == "jpeg" {
                         ui.add(egui::Slider::new(&mut app.batch_state.jpeg_quality, 1..=100).text("Quality"));
                     }
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new("Apply")).clicked() {
+                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
+                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                    )).clicked() {
                         app.batch_state.running = true;
                         app.batch_state.progress_total = selected.len();
                         app.batch_state.progress_current = 0;
@@ -162,7 +164,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                                 .unwrap_or_default());
                         ui.label(format!("Preview: {}", preview_name));
                     }
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new("Apply")).clicked() {
+                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
+                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                    )).clicked() {
                         app.batch_state.running = true;
                         let pattern = app.batch_state.rename_pattern.clone();
                         let result = operations::batch_rename(&selected, &pattern);
@@ -194,7 +198,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         }
                     });
                     ui.checkbox(&mut app.batch_state.resize_lock_aspect, "Lock aspect ratio");
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new("Apply")).clicked() {
+                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
+                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                    )).clicked() {
                         app.batch_state.running = true;
                         let w = app.batch_state.resize_width;
                         let h = app.batch_state.resize_height;

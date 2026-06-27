@@ -169,16 +169,32 @@ pub fn show(data: &mut ExifData, ctx: &egui::Context) {
 
     egui::SidePanel::right("exif_panel")
         .resizable(true)
+        .frame(egui::Frame {
+            fill: crate::theme::PANEL_BG,
+            inner_margin: egui::Margin::symmetric(8, 8),
+            ..Default::default()
+        })
         .default_width(280.0)
         .min_width(200.0)
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("EXIF Data");
                 ui.separator();
-                for (label, value) in &data.entries {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(format!("{label}:")).strong());
-                        ui.label(value);
+                for (i, (label, value)) in data.entries.iter().enumerate() {
+                    let row_bg = if i % 2 == 0 {
+                        crate::theme::PANEL_BG
+                    } else {
+                        crate::theme::CARD_BG
+                    };
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width(), 20.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().rect_filled(rect, egui::CornerRadius::same(0), row_bg);
+                    let mut child_ui = ui.child_ui(rect, *ui.layout(), None);
+                    child_ui.horizontal(|ui| {
+                        ui.colored_label(crate::theme::ACCENT, format!("{label}:"));
+                        ui.colored_label(crate::theme::TEXT_PRIMARY, value);
                     });
                 }
             });
