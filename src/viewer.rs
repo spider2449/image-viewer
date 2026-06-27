@@ -400,7 +400,7 @@ fn draw_image(
 
     let drag = ui.interact(
         egui::Rect::from_min_size(image_rect.min, available),
-        ui.next_auto_id(),
+        egui::Id::new("viewer_image_drag"),
         egui::Sense::drag(),
     );
     if drag.dragged() {

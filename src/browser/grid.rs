@@ -111,6 +111,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .id_salt("thumb_grid_scroll")
         .show(ui, |ui| {
             let cell_size = Vec2::new(THUMB_SIZE, THUMB_SIZE + LABEL_HEIGHT);
             egui::Grid::new("thumb_grid")
@@ -314,6 +315,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .id_salt("list_view_scroll")
         .show(ui, |ui| {
             let available = ui.available_width();
 

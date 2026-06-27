@@ -67,9 +67,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
         #[allow(deprecated)]
         ui.allocate_ui_at_rect(tree_rect.shrink2(egui::vec2(4.0, 4.0)), |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                tree::show_tree(app, ui);
-            });
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .id_salt("tree_scroll")
+                .show(ui, |ui| {
+                    tree::show_tree(app, ui);
+                });
         });
 
         // ── Resize handle ───────────────────────────────────
