@@ -307,24 +307,87 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
 
+    const ICON_W: f32 = 24.0;
+    const GAP: f32 = 4.0;
+    const MIN_W: f32 = 60.0;
+    const HANDLE_W: f32 = 8.0;
+
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // Column headers
-            ui.horizontal(|ui| {
-                ui.allocate_space(Vec2::new(24.0, 0.0)); // icon column
-                ui.strong("Name");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.strong("Date");
-                    ui.add_space(16.0);
-                    ui.strong("Size");
-                    ui.add_space(16.0);
-                    ui.strong("Dimensions");
-                    ui.add_space(16.0);
-                });
+            let available = ui.available_width();
+
+            let widths = col_widths(&app.config.column_widths, available, ICON_W, MIN_W, GAP);
+
+            // ── Column headers ──────────────────────────────
+            let header_h = 20.0;
+            let (header_rect, _) = ui.allocate_exact_size(
+                Vec2::new(available, header_h),
+                egui::Sense::hover(),
+            );
+
+            ui.painter().rect_filled(header_rect, egui::CornerRadius::same(2), crate::theme::PANEL_BG);
+
+            let mut x = header_rect.min.x;
+            let header_y = header_rect.min.y;
+
+            // Icon header (fixed width spacer)
+            x += ICON_W;
+
+            // Name header + drag handle
+            ui.painter().text(
+                egui::pos2(x + 4.0, header_y + header_h / 2.0),
+                egui::Align2::LEFT_CENTER,
+                "Name",
+                egui::FontId::proportional(14.0),
+                crate::theme::TEXT_PRIMARY,
+            );
+            x += widths.name;
+            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+                app.config.column_widths.name = (app.config.column_widths.name + d).max(MIN_W);
             });
+            x += GAP;
+
+            // Dimensions header + drag handle
+            ui.painter().text(
+                egui::pos2(x + 4.0, header_y + header_h / 2.0),
+                egui::Align2::LEFT_CENTER,
+                "Dimensions",
+                egui::FontId::proportional(14.0),
+                crate::theme::TEXT_PRIMARY,
+            );
+            x += widths.dimensions;
+            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+                app.config.column_widths.dimensions = (app.config.column_widths.dimensions + d).max(MIN_W);
+            });
+            x += GAP;
+
+            // Size header + drag handle
+            ui.painter().text(
+                egui::pos2(x + 4.0, header_y + header_h / 2.0),
+                egui::Align2::LEFT_CENTER,
+                "Size",
+                egui::FontId::proportional(14.0),
+                crate::theme::TEXT_PRIMARY,
+            );
+            x += widths.size;
+            x = drag_handle(ui, x, header_y, header_h, HANDLE_W, |d| {
+                app.config.column_widths.size = (app.config.column_widths.size + d).max(MIN_W);
+            });
+            x += GAP;
+
+            // Date header (no handle after)
+            ui.painter().text(
+                egui::pos2(x + 4.0, header_y + header_h / 2.0),
+                egui::Align2::LEFT_CENTER,
+                "Date",
+                egui::FontId::proportional(14.0),
+                crate::theme::TEXT_PRIMARY,
+            );
+
             ui.separator();
 
+            // ── Rows ────────────────────────────────────────
             for (i, path) in paths.iter().enumerate() {
                 let is_selected = app.browser_state.selected_thumb == Some(i);
                 let row_bg = if is_selected {
@@ -335,64 +398,93 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     crate::theme::CARD_BG
                 };
 
+                let row_h = 24.0;
                 let (rect, response) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), 24.0),
+                    Vec2::new(available, row_h),
                     egui::Sense::click(),
                 );
 
-                // Row background
                 let actual_bg = if response.hovered() && !is_selected {
                     crate::theme::HOVER_BG
                 } else {
                     row_bg
                 };
-                ui.painter().rect_filled(rect, CornerRadius::same(2), actual_bg);
+                ui.painter().rect_filled(rect, egui::CornerRadius::same(2), actual_bg);
 
-                // Content inside row
-                let inner = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 24.0));
-                #[allow(deprecated)]
-                let mut child_ui = ui.child_ui(inner, *ui.layout(), None);
-                child_ui.horizontal(|ui| {
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new("\u{1F5BC}").size(12.0).color(crate::theme::TEXT_SECONDARY));
-                    ui.add_space(4.0);
-                    let name = path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    ui.colored_label(
-                        if is_selected { crate::theme::TEXT_PRIMARY } else { crate::theme::TEXT_SECONDARY },
-                        &name,
-                    );
+                // Row content
+                let widths = col_widths(&app.config.column_widths, rect.width(), ICON_W, MIN_W, GAP);
+                let mut x = rect.min.x;
+                let cy = rect.center().y;
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let meta = std::fs::metadata(path).ok();
-                        if let Some(ref m) = meta {
-                            // Date (rightmost)
-                            if let Ok(modified) = m.modified() {
-                                if let Ok(dt) = modified.duration_since(std::time::UNIX_EPOCH) {
-                                    let secs = dt.as_secs();
-                                    let days = secs / 86400;
-                                    let time = secs % 86400;
-                                    let h = time / 3600;
-                                    let min = (time % 3600) / 60;
-                                    ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{days}d {h:02}:{min:02}"));
-                                } else {
-                                    ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                                }
-                            } else {
-                                ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                            }
-                            // Size (middle)
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, format_size(m.len()));
-                            // Dimensions (leftmost)
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                        } else {
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, "-");
-                        }
-                    });
-                });
+                // Icon
+                ui.painter().text(
+                    egui::pos2(x + ICON_W / 2.0, cy),
+                    egui::Align2::CENTER_CENTER,
+                    "\u{1F5BC}",
+                    egui::FontId::proportional(12.0),
+                    crate::theme::TEXT_SECONDARY,
+                );
+                x += ICON_W;
+
+                // Name
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let name_color = if is_selected { crate::theme::TEXT_PRIMARY } else { crate::theme::TEXT_SECONDARY };
+                ui.painter().text(
+                    egui::pos2(x + 4.0, cy),
+                    egui::Align2::LEFT_CENTER,
+                    &name,
+                    egui::FontId::proportional(12.0),
+                    name_color,
+                );
+                x += widths.name + GAP;
+
+                // Dimensions
+                ui.painter().text(
+                    egui::pos2(x + widths.dimensions - 4.0, cy),
+                    egui::Align2::RIGHT_CENTER,
+                    "-",
+                    egui::FontId::proportional(12.0),
+                    crate::theme::TEXT_SECONDARY,
+                );
+                x += widths.dimensions + GAP;
+
+                // Size
+                let size_str = std::fs::metadata(path)
+                    .ok()
+                    .map(|m| format_size(m.len()))
+                    .unwrap_or_else(|| "-".to_string());
+                ui.painter().text(
+                    egui::pos2(x + widths.size - 4.0, cy),
+                    egui::Align2::RIGHT_CENTER,
+                    &size_str,
+                    egui::FontId::proportional(12.0),
+                    crate::theme::TEXT_SECONDARY,
+                );
+                x += widths.size + GAP;
+
+                // Date
+                let date_str = std::fs::metadata(path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|dt| {
+                        let secs = dt.as_secs();
+                        let days = secs / 86400;
+                        let time = secs % 86400;
+                        let h = time / 3600;
+                        let min = (time % 3600) / 60;
+                        format!("{days}d {h:02}:{min:02}")
+                    })
+                    .unwrap_or_else(|| "-".to_string());
+                ui.painter().text(
+                    egui::pos2(x + widths.date - 4.0, cy),
+                    egui::Align2::RIGHT_CENTER,
+                    &date_str,
+                    egui::FontId::proportional(12.0),
+                    crate::theme::TEXT_SECONDARY,
+                );
 
                 if response.double_clicked() {
                     app.switch_to_viewer(i);
@@ -403,6 +495,51 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
         });
+}
+
+fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
+    let name = cw.name.max(min_w);
+    let dimensions = cw.dimensions.max(min_w);
+    let size = cw.size.max(min_w);
+    let mut date = cw.date.max(min_w);
+    let fixed = icon_w + name + gap + dimensions + gap + size + gap;
+    if fixed + date < available {
+        date += available - fixed - date;
+    }
+    ColumnWidthSet { name, dimensions, size, date }
+}
+
+struct ColumnWidthSet {
+    name: f32,
+    dimensions: f32,
+    size: f32,
+    date: f32,
+}
+
+fn drag_handle(
+    ui: &mut egui::Ui,
+    x: f32,
+    header_y: f32,
+    header_h: f32,
+    handle_w: f32,
+    mut on_drag: impl FnMut(f32),
+) -> f32 {
+    let handle_rect = egui::Rect::from_min_size(
+        egui::pos2(x - handle_w / 2.0, header_y),
+        egui::vec2(handle_w, header_h),
+    );
+    let resp = ui.interact(handle_rect, ui.next_auto_id(), egui::Sense::click_and_drag());
+
+    ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0, crate::theme::BORDER));
+
+    if resp.drag_started() || resp.dragged() || resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
+    }
+    if resp.dragged() {
+        on_drag(resp.drag_delta().x);
+    }
+
+    x
 }
 
 fn format_size(bytes: u64) -> String {
