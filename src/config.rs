@@ -1,6 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnWidths {
+    pub name: f32,
+    pub dimensions: f32,
+    pub size: f32,
+    pub date: f32,
+}
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        Self {
+            name: 200.0,
+            dimensions: 100.0,
+            size: 80.0,
+            date: 150.0,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     pub last_folder: Option<String>,
@@ -10,6 +29,7 @@ pub struct Config {
     pub sort_descending: bool,
     pub slideshow_interval_secs: u32,
     pub zoom_default: f32,
+    pub column_widths: ColumnWidths,
 }
 
 impl Default for Config {
@@ -22,6 +42,7 @@ impl Default for Config {
             sort_descending: false,
             slideshow_interval_secs: 5,
             zoom_default: 1.0,
+            column_widths: ColumnWidths::default(),
         }
     }
 }
@@ -45,8 +66,9 @@ impl Config {
     }
 
     fn path() -> PathBuf {
-        let mut p = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("image-viewer");
+        let mut p = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+        p.pop(); // exe dir
+        p.push("cache");
         p.push("config.json");
         p
     }
