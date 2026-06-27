@@ -93,6 +93,7 @@ impl App {
         self.textures.clear();
         self.browser_state.thumbnails.clear();
         self.browser_state.thumb_textures.clear();
+        self.browser_state.tree_nodes.clear(); // rebuild tree on next frame
         let folder = match &self.current_folder {
             Some(f) => f.clone(),
             None => return,

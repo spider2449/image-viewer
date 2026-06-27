@@ -72,7 +72,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .default_size([600.0, 500.0])
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut app.batch_state.mode, BatchMode::Convert, "Convert");
@@ -157,12 +156,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         let fmt = app.batch_state.convert_format;
                         let q = app.batch_state.jpeg_quality;
                         let result = operations::batch_convert(&selected, fmt, q);
-                        match result {
-                            Ok(()) => app.batch_state.log.push("Convert complete.".to_string()),
-                            Err(errs) => {
-                                for e in errs {
-                                    app.batch_state.log.push(e);
-                                }
+                        app.batch_state.log.clear();
+                        if let Err(errs) = result {
+                            for e in errs {
+                                app.batch_state.log.push(e);
                             }
                         }
                         app.batch_state.running = false;
@@ -174,7 +171,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         ui.label("Pattern:");
                         ui.text_edit_singleline(&mut app.batch_state.rename_pattern);
                     });
-                    ui.label("Use {n} for sequence number, {name} for original name.");
                     if !selected.is_empty() {
                         let preview_name = app.batch_state.rename_pattern
                             .replace("{n}", "001")
@@ -189,12 +185,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.batch_state.running = true;
                         let pattern = app.batch_state.rename_pattern.clone();
                         let result = operations::batch_rename(&selected, &pattern);
-                        match result {
-                            Ok(()) => app.batch_state.log.push("Rename complete.".to_string()),
-                            Err(errs) => {
-                                for e in errs {
-                                    app.batch_state.log.push(e);
-                                }
+                        app.batch_state.log.clear();
+                        if let Err(errs) = result {
+                            for e in errs {
+                                app.batch_state.log.push(e);
                             }
                         }
                         app.batch_state.running = false;
@@ -224,12 +218,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         let w = app.batch_state.resize_width;
                         let h = app.batch_state.resize_height;
                         let result = operations::batch_resize(&selected, w, h);
-                        match result {
-                            Ok(()) => app.batch_state.log.push("Resize complete.".to_string()),
-                            Err(errs) => {
-                                for e in errs {
-                                    app.batch_state.log.push(e);
-                                }
+                        app.batch_state.log.clear();
+                        if let Err(errs) = result {
+                            for e in errs {
+                                app.batch_state.log.push(e);
                             }
                         }
                         app.batch_state.running = false;
@@ -241,6 +233,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if !app.batch_state.log.is_empty() {
                 ui.separator();
                 egui::ScrollArea::vertical()
+                    .id_salt("batch_log")
                     .max_height(100.0)
                     .show(ui, |ui| {
                         for line in &app.batch_state.log {

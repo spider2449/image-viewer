@@ -116,7 +116,7 @@ fn show_node(
         crate::theme::PANEL_BG
     };
 
-    let response = egui::Frame {
+    let frame_resp = egui::Frame {
         fill: bg,
         corner_radius: egui::CornerRadius::same(4),
         inner_margin: egui::Margin::symmetric(2, 2),
@@ -167,12 +167,30 @@ fn show_node(
             if label.clicked() {
                 *click_folder = Some(node.path.clone());
             }
+
+            if depth > 0 {
+                label.context_menu(|ui| {
+                    if ui.button("Delete folder").clicked() {
+                        ui.close_menu();
+                        let path = node.path.clone();
+                        let _ = std::fs::remove_dir_all(&path);
+                        app.browser_state.tree_nodes.clear();
+                        if app.current_folder.as_ref().is_some_and(|f| f == &node.path) {
+                            app.current_folder = None;
+                            app.image_files.clear();
+                            app.textures.clear();
+                            app.browser_state.thumbnails.clear();
+                            app.browser_state.thumb_textures.clear();
+                        }
+                    }
+                });
+            }
         });
     });
 
-    if !is_selected && response.response.hovered() {
+    if !is_selected && frame_resp.response.hovered() {
         ui.painter().rect_filled(
-            response.response.rect,
+            frame_resp.response.rect,
             egui::CornerRadius::same(4),
             egui::Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 20),
         );
