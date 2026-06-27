@@ -4,6 +4,7 @@ mod app;
 mod batch;
 mod browser;
 mod config;
+mod disk_cache;
 mod editor;
 mod exif;
 mod font_loader;
