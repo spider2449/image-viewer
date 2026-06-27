@@ -46,76 +46,85 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     let is_fullscreen = app.viewer_state.is_fullscreen;
 
     if !is_fullscreen {
-        egui::TopBottomPanel::top("viewer_toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("\u{2190} Browser").clicked() {
-                    app.mode = Mode::Browser;
-                    app.viewer_state.image_loaded = false;
-                }
-                ui.separator();
-                if ui.button("\u{25C0} Prev").clicked() {
-                    app.prev_image();
-                }
-                if ui.button("\u{25B6} Next").clicked() {
-                    app.next_image();
-                }
-                ui.separator();
-                if ui.button("Fit").clicked() {
-                    app.viewer_state.zoom = app.viewer_state.fit_zoom;
-                    app.viewer_state.pan_offset = Vec2::ZERO;
-                }
-                if ui.button("1:1").clicked() {
-                    app.viewer_state.zoom = 1.0;
-                    app.viewer_state.pan_offset = Vec2::ZERO;
-                }
-                ui.label("Zoom:");
-                let mut zoom_pct = (app.viewer_state.zoom * 100.0) as i32;
-                if ui
-                    .add(egui::Slider::new(&mut zoom_pct, 10..=3200).text("%"))
-                    .changed()
-                {
-                    app.viewer_state.zoom = zoom_pct as f32 / 100.0;
-                }
-                ui.separator();
-                if ui
-                    .selectable_label(app.viewer_state.show_info, "Info")
-                    .clicked()
-                {
-                    app.viewer_state.show_info = !app.viewer_state.show_info;
-                }
-                if ui.selectable_label(app.exif_state.visible, "Exif").clicked() {
-                    app.exif_state.visible = !app.exif_state.visible;
-                }
-                if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
-                    app.editor_state.visible = !app.editor_state.visible;
-                }
-                if ui.button("\u{26F6} FS").clicked() {
-                    app.viewer_state.is_fullscreen = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-                }
-                ui.separator();
-                let slideshow_label = if app.viewer_state.is_slideshow {
-                    "\u{23F8} Stop"
-                } else {
-                    "\u{25B6} Slide"
-                };
-                if ui.button(slideshow_label).clicked() {
-                    app.viewer_state.is_slideshow = !app.viewer_state.is_slideshow;
-                    app.viewer_state.slideshow_timer = 0.0;
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!(
-                        "{}/{}",
-                        app.selected_image_index + 1,
-                        app.image_files.len()
-                    ));
-                    if let Some(name) = path.file_name() {
-                        ui.label(name.to_string_lossy().to_string());
+        egui::TopBottomPanel::top("viewer_toolbar")
+            .frame(egui::Frame {
+                fill: crate::theme::PANEL_BG,
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Navigation group
+                    if ui.button(egui::RichText::new("\u{2190} Browser").color(crate::theme::ACCENT)).clicked() {
+                        app.mode = Mode::Browser;
+                        app.viewer_state.image_loaded = false;
                     }
+                    ui.separator();
+                    if ui.button("\u{25C0} Prev").clicked() {
+                        app.prev_image();
+                    }
+                    if ui.button("\u{25B6} Next").clicked() {
+                        app.next_image();
+                    }
+                    // Zoom group
+                    ui.separator();
+                    if ui.button("Fit").clicked() {
+                        app.viewer_state.zoom = app.viewer_state.fit_zoom;
+                        app.viewer_state.pan_offset = Vec2::ZERO;
+                    }
+                    if ui.button("1:1").clicked() {
+                        app.viewer_state.zoom = 1.0;
+                        app.viewer_state.pan_offset = Vec2::ZERO;
+                    }
+                    ui.colored_label(crate::theme::TEXT_SECONDARY, "Zoom:");
+                    let mut zoom_pct = (app.viewer_state.zoom * 100.0) as i32;
+                    if ui
+                        .add(egui::Slider::new(&mut zoom_pct, 10..=3200).text("%"))
+                        .changed()
+                    {
+                        app.viewer_state.zoom = zoom_pct as f32 / 100.0;
+                    }
+                    // Display group
+                    ui.separator();
+                    if ui
+                        .selectable_label(app.viewer_state.show_info, "Info")
+                        .clicked()
+                    {
+                        app.viewer_state.show_info = !app.viewer_state.show_info;
+                    }
+                    if ui.selectable_label(app.exif_state.visible, "Exif").clicked() {
+                        app.exif_state.visible = !app.exif_state.visible;
+                    }
+                    if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
+                        app.editor_state.visible = !app.editor_state.visible;
+                    }
+                    // Fullscreen
+                    if ui.button("\u{26F6} FS").clicked() {
+                        app.viewer_state.is_fullscreen = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+                    }
+                    ui.separator();
+                    let slideshow_label = if app.viewer_state.is_slideshow {
+                        "\u{23F8} Stop"
+                    } else {
+                        "\u{25B6} Slide"
+                    };
+                    if ui.button(slideshow_label).clicked() {
+                        app.viewer_state.is_slideshow = !app.viewer_state.is_slideshow;
+                        app.viewer_state.slideshow_timer = 0.0;
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.colored_label(crate::theme::TEXT_SECONDARY, format!(
+                            "{}/{}",
+                            app.selected_image_index + 1,
+                            app.image_files.len()
+                        ));
+                        if let Some(name) = path.file_name() {
+                            ui.colored_label(crate::theme::TEXT_SECONDARY, name.to_string_lossy().to_string());
+                        }
+                    });
                 });
             });
-        });
     }
 
     if is_fullscreen {
@@ -169,26 +178,32 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
-    egui::TopBottomPanel::bottom("viewer_status").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            let z = app.viewer_state.zoom;
-            let px = app.viewer_state.pan_offset.x;
-            let py = app.viewer_state.pan_offset.y;
-            ui.label(format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0));
-            ui.separator();
-            if let Ok(meta) = std::fs::metadata(&path) {
-                let sz = meta.len();
-                let size_str = if sz >= 1024 * 1024 {
-                    format!("{:.1} MB", sz as f64 / (1024.0 * 1024.0))
-                } else if sz >= 1024 {
-                    format!("{:.1} KB", sz as f64 / 1024.0)
-                } else {
-                    format!("{sz} B")
-                };
-                ui.label(size_str);
-            }
+    egui::TopBottomPanel::bottom("viewer_status")
+        .frame(egui::Frame {
+            fill: crate::theme::PANEL_BG,
+            ..Default::default()
+        })
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let z = app.viewer_state.zoom;
+                let px = app.viewer_state.pan_offset.x;
+                let py = app.viewer_state.pan_offset.y;
+                ui.colored_label(crate::theme::TEXT_SECONDARY,
+                    format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0));
+                ui.separator();
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    let sz = meta.len();
+                    let size_str = if sz >= 1024 * 1024 {
+                        format!("{:.1} MB", sz as f64 / (1024.0 * 1024.0))
+                    } else if sz >= 1024 {
+                        format!("{:.1} KB", sz as f64 / 1024.0)
+                    } else {
+                        format!("{sz} B")
+                    };
+                    ui.colored_label(crate::theme::TEXT_SECONDARY, size_str);
+                }
+            });
         });
-    });
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let available = ui.available_size();
@@ -322,11 +337,48 @@ fn draw_image(
         display_size,
     );
 
+    // Checkerboard alpha background (draw behind image)
+    let checker_size = 8.0;
+    let check_colors = [
+        egui::Color32::from_rgb(0x33, 0x33, 0x33),
+        egui::Color32::from_rgb(0x44, 0x44, 0x44),
+    ];
+    {
+        let mut x = draw_rect.min.x;
+        let mut row = 0i32;
+        while x < draw_rect.max.x {
+            let mut y = draw_rect.min.y;
+            let mut col = 0i32;
+            while y < draw_rect.max.y {
+                let idx = ((row & 1) ^ (col & 1)) as usize;
+                let cell = egui::Rect::from_min_size(
+                    egui::pos2(x, y),
+                    egui::Vec2::new(checker_size, checker_size),
+                );
+                ui.painter().rect_filled(cell, egui::CornerRadius::ZERO, check_colors[idx]);
+                y += checker_size;
+                col += 1;
+            }
+            x += checker_size;
+            row += 1;
+        }
+    }
+
+    // Inner border around image area
+    let border_rect = egui::Rect::from_min_size(image_rect.min, available);
+    ui.painter().rect_stroke(
+        border_rect,
+        egui::CornerRadius::ZERO,
+        egui::Stroke::new(1.0, crate::theme::BORDER),
+        egui::StrokeKind::Inside,
+    );
+
+    // Draw image
     ui.painter().image(
         tex.id(),
         draw_rect,
         egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        Color32::WHITE,
+        egui::Color32::WHITE,
     );
 
     let (mouse_pos, scroll_delta) = ctx_input(ui.ctx());
@@ -355,6 +407,7 @@ fn draw_image(
         app.viewer_state.pan_offset += drag.drag_delta();
     }
 
+    // Styled info overlay
     if app.viewer_state.show_info {
         let info_text = format!(
             "{}x{}\nZoom: {:.0}%\n{}",
@@ -366,14 +419,21 @@ fn draw_image(
                 .unwrap_or_default(),
         );
         let painter = ui.painter();
-        let text_pos = egui::pos2(image_rect.min.x + 10.0, image_rect.min.y + 10.0);
-        painter.text(
-            text_pos,
-            egui::Align2::LEFT_TOP,
-            info_text,
-            egui::FontId::monospace(14.0),
-            Color32::WHITE,
+        let text_pos = egui::pos2(image_rect.min.x + 12.0, image_rect.min.y + 12.0);
+
+        // Semi-transparent background
+        let font_id = egui::FontId::monospace(14.0);
+        let galley = painter.layout_no_wrap(info_text, font_id, egui::Color32::WHITE);
+        let bg_rect = egui::Rect::from_min_size(
+            text_pos - egui::Vec2::new(4.0, 4.0),
+            galley.size() + egui::Vec2::new(8.0, 8.0),
         );
+        painter.rect_filled(
+            bg_rect,
+            egui::CornerRadius::same(4),
+            egui::Color32::from_black_alpha(180),
+        );
+        painter.galley(text_pos, galley, egui::Color32::WHITE);
     }
 }
 
