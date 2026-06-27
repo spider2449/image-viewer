@@ -142,7 +142,8 @@ impl ThumbnailCache {
                                                 load_time: start.elapsed(),
                                             }
                                         }
-                                        Err(_) => {
+                                        Err(e) => {
+                                            eprintln!("[thumbnail] decode failed for {:?}: {e}", req.path);
                                             ThumbnailResult {
                                                 path: req.path,
                                                 image: None,

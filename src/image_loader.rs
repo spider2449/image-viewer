@@ -4,7 +4,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub fn decode_to_colorimage(path: &Path) -> Result<(ColorImage, u32, u32, u8), String> {
-    let img = image::open(path).map_err(|e| format!("Failed to decode: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read: {e}"))?;
+    let img = image::load_from_memory(&bytes)
+        .or_else(|_| image::load_from_memory_with_format(&bytes, image::ImageFormat::Png))
+        .or_else(|_| image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg))
+        .map_err(|e| format!("Failed to decode: {e}"))?;
     let (w, h) = img.dimensions();
     let bit_depth = match img {
         DynamicImage::ImageLuma8(_) => 8,
@@ -40,7 +44,11 @@ pub fn load_thumbnail(
     path: &Path,
     max_size: u32,
 ) -> Result<(ColorImage, u32, u32), String> {
-    let img = image::open(path).map_err(|e| format!("Failed to decode thumb: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read: {e}"))?;
+    let img = image::load_from_memory(&bytes)
+        .or_else(|_| image::load_from_memory_with_format(&bytes, image::ImageFormat::Png))
+        .or_else(|_| image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg))
+        .map_err(|e| format!("Failed to decode thumb: {e}"))?;
     let (w, h) = img.dimensions();
     let scale = (max_size as f32 / w.max(h) as f32).min(1.0);
     let new_w = (w as f32 * scale) as u32;

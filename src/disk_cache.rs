@@ -5,6 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+#[derive(Clone)]
 pub struct DiskCache {
     dir: PathBuf,
 }
@@ -42,16 +43,33 @@ impl DiskCache {
 
     pub fn store(&self, path: &Path, max_size: u32, image: &ColorImage) {
         self.delete_old_entries(path);
-        let Some(cache_path) = self.cache_path(path, max_size) else { return };
+        let Some(cache_path) = self.cache_path(path, max_size) else {
+            eprintln!("[disk_cache] cache_path returned None (mtime or hash issue?) for {:?}", path);
+            return;
+        };
+        let w = image.size[0] as u32;
+        let h = image.size[1] as u32;
+        if w == 0 || h == 0 {
+            eprintln!("[disk_cache] skipping zero-dimension thumbnail for {:?}", path);
+            return;
+        }
         let raw: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
-        let rgba = image::RgbaImage::from_raw(image.size[0] as u32, image.size[1] as u32, raw).unwrap();
+        let Some(rgba) = image::RgbaImage::from_raw(w, h, raw) else {
+            eprintln!("[disk_cache] from_raw failed: {}x{} pixels={} path={:?}", w, h, image.pixels.len(), path);
+            return;
+        };
         let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
         let mut buf = Vec::new();
         {
             let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 85);
-            enc.encode(&rgb, image.size[0] as u32, image.size[1] as u32, image::ExtendedColorType::Rgb8).ok();
+            if let Err(e) = enc.encode(&rgb, w, h, image::ExtendedColorType::Rgb8) {
+                eprintln!("[disk_cache] JPEG encode error: {e}");
+                return;
+            }
         }
-        fs::write(&cache_path, &buf).ok();
+        if let Err(e) = fs::write(&cache_path, &buf) {
+            eprintln!("[disk_cache] write error: {e}");
+        }
     }
 
     #[allow(dead_code)]
