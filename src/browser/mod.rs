@@ -17,6 +17,7 @@ pub struct State {
     pub tree_width: f32,
     #[allow(dead_code)]
     pub scroll_to_selected: bool,
+    pub thumb_decode_size: u32,
 }
 
 impl State {
@@ -30,6 +31,7 @@ impl State {
             show_list_view: false,
             tree_width: 200.0,
             scroll_to_selected: false,
+            thumb_decode_size: 0,
         }
     }
 }

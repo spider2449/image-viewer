@@ -3,11 +3,11 @@ use eframe::egui::{self, Color32, TextureOptions, Vec2, Stroke, CornerRadius};
 use image::GenericImageView;
 use std::path::PathBuf;
 
-const THUMB_SIZE: f32 = 140.0;
 const THUMB_PADDING: f32 = 8.0;
 const LABEL_HEIGHT: f32 = 30.0;
 
 pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
+    let mut size_changed = false;
     // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
         ui.label(crate::theme::styled_icon("\u{25C0}"));
@@ -33,6 +33,13 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             .clicked()
         {
             app.browser_state.show_list_view = !app.browser_state.show_list_view;
+        }
+        ui.separator();
+        ui.label("Size:");
+        let mut ts = app.config.thumb_size;
+        if ui.add(egui::Slider::new(&mut ts, 60.0..=400.0).text("px")).changed() {
+            app.config.thumb_size = ts;
+            size_changed = true;
         }
         let mut sort_changed = false;
         ui.separator();
@@ -93,8 +100,27 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         app.browser_state.thumbnails.insert(result.path, result.image);
     }
 
+    let (scroll, mods) = ui.input(|i| (i.raw_scroll_delta, i.modifiers));
+    if mods.ctrl && scroll.y != 0.0 {
+        let step = if scroll.y > 0.0 { 10.0 } else { -10.0 };
+        app.config.thumb_size = (app.config.thumb_size + step).clamp(60.0, 400.0);
+        size_changed = true;
+    }
+
+    if size_changed {
+        let new_decode = ((app.config.thumb_size * 1.5).ceil() as u32).max(200);
+        if new_decode > app.browser_state.thumb_decode_size {
+            app.browser_state.thumb_decode_size = new_decode;
+            app.browser_state.thumbnails.clear();
+            app.browser_state.thumb_textures.clear();
+            for path in &app.image_files {
+                // thumbnail_cache.request will be wired in Task 4 — skip for now
+            }
+        }
+    }
+
     let available_width = ui.available_width();
-    let cols = ((available_width - THUMB_PADDING) / (THUMB_SIZE + THUMB_PADDING))
+    let cols = ((available_width - THUMB_PADDING) / (app.config.thumb_size + THUMB_PADDING))
         .floor()
         .max(1.0) as usize;
 
@@ -113,10 +139,10 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
         .auto_shrink([false, false])
         .id_salt("thumb_grid_scroll")
         .show(ui, |ui| {
-            let cell_size = Vec2::new(THUMB_SIZE, THUMB_SIZE + LABEL_HEIGHT);
+            let cell_size = Vec2::new(app.config.thumb_size, app.config.thumb_size + LABEL_HEIGHT);
             egui::Grid::new("thumb_grid")
                 .spacing([THUMB_PADDING, THUMB_PADDING])
-                .min_col_width(THUMB_SIZE)
+                .min_col_width(app.config.thumb_size)
                 .show(ui, |ui| {
                     for (i, path) in paths.iter().enumerate() {
                         if i > 0 && i % cols == 0 {
@@ -174,7 +200,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                         // Thumbnail image area
                         let thumb_rect = egui::Rect::from_min_size(
                             rect.min,
-                            Vec2::new(THUMB_SIZE, THUMB_SIZE),
+                            Vec2::new(app.config.thumb_size, app.config.thumb_size),
                         );
 
                         if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
@@ -188,11 +214,11 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             };
                             let tex_size = tex.size_vec2();
                             let scale =
-                                (THUMB_SIZE / tex_size.x).min(THUMB_SIZE / tex_size.y).min(1.0);
+                                (app.config.thumb_size / tex_size.x).min(app.config.thumb_size / tex_size.y).min(1.0);
                             let draw_size = tex_size * scale;
                             let offset = Vec2::new(
-                                (THUMB_SIZE - draw_size.x) / 2.0,
-                                (THUMB_SIZE - draw_size.y) / 2.0,
+                                (app.config.thumb_size - draw_size.x) / 2.0,
+                                (app.config.thumb_size - draw_size.y) / 2.0,
                             );
                             let image_rect = egui::Rect::from_min_size(
                                 thumb_rect.min + offset,
@@ -231,8 +257,8 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
                         let label_rect = egui::Rect::from_min_size(
-                            rect.min + Vec2::new(4.0, THUMB_SIZE),
-                            Vec2::new(THUMB_SIZE - 8.0, LABEL_HEIGHT),
+                            rect.min + Vec2::new(4.0, app.config.thumb_size),
+                            Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
                         );
                         let display_name = if name.len() > 18 {
                             format!("{}…", &name[..17])

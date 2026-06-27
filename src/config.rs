@@ -28,6 +28,7 @@ pub struct Config {
     pub slideshow_interval_secs: u32,
     pub zoom_default: f32,
     pub column_widths: ColumnWidths,
+    pub thumb_size: f32,
 }
 
 impl Default for Config {
@@ -41,6 +42,7 @@ impl Default for Config {
             slideshow_interval_secs: 5,
             zoom_default: 1.0,
             column_widths: ColumnWidths::default(),
+            thumb_size: 140.0,
         }
     }
 }
