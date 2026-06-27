@@ -1,7 +1,7 @@
 use egui::ColorImage;
 use image::GenericImageView;
-use sha2::{Digest, Sha256};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -81,20 +81,15 @@ impl DiskCache {
     }
 
     pub fn path_hash(&self, path: &Path) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(path.to_string_lossy().as_bytes());
-        hex_encode(&hasher.finalize()[..8])
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
     }
 
     fn get_mtime(path: &Path) -> Option<u64> {
         let meta = fs::metadata(path).ok()?;
         meta.modified().ok()?.duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs())
     }
-}
-
-#[allow(dead_code)]
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]

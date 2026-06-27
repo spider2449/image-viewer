@@ -45,7 +45,7 @@ pub fn load_thumbnail(
     let scale = (max_size as f32 / w.max(h) as f32).min(1.0);
     let new_w = (w as f32 * scale) as u32;
     let new_h = (h as f32 * scale) as u32;
-    let thumb = img.resize_exact(new_w.max(1), new_h.max(1), image::imageops::FilterType::Lanczos3);
+    let thumb = img.thumbnail(new_w.max(1), new_h.max(1));
     let rgba = thumb.to_rgba8();
     let ci = ColorImage::from_rgba_unmultiplied([new_w.max(1) as usize, new_h.max(1) as usize], &rgba);
     Ok((ci, w, h))
