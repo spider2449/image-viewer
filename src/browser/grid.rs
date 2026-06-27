@@ -312,10 +312,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     const MIN_W: f32 = 60.0;
     const HANDLE_W: f32 = 8.0;
 
-    egui::ScrollArea::horizontal()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            egui::ScrollArea::vertical()
+    egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let available = ui.available_width();
@@ -477,7 +474,6 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
         });
-    });
 }
 
 fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
