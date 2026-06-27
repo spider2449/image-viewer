@@ -56,6 +56,24 @@ fn build_node(path: &PathBuf, max_depth: usize) -> Option<TreeNode> {
     })
 }
 
+fn expand_node(nodes: &mut [TreeNode], target: &PathBuf) -> bool {
+    for node in nodes.iter_mut() {
+        if node.path == *target {
+            if node.children.is_empty() {
+                if let Some(new_node) = build_node(target, 1) {
+                    node.children = new_node.children;
+                    node.has_subdirs = new_node.has_subdirs;
+                }
+            }
+            return true;
+        }
+        if expand_node(&mut node.children, target) {
+            return true;
+        }
+    }
+    false
+}
+
 fn has_directories(path: &PathBuf) -> bool {
     std::fs::read_dir(path)
         .ok()
@@ -116,16 +134,7 @@ fn show_node(
                     } else {
                         app.browser_state.expanded_paths.push(node.path.clone());
                         if node.children.is_empty() {
-                            if let Some(idx) = app
-                                .browser_state
-                                .tree_nodes
-                                .iter()
-                                .position(|n| n.path == node.path)
-                            {
-                                if let Some(new_node) = build_node(&node.path, 1) {
-                                    app.browser_state.tree_nodes[idx] = new_node;
-                                }
-                            }
+                            expand_node(&mut app.browser_state.tree_nodes, &node.path);
                         }
                     }
                 }
