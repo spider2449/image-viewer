@@ -29,6 +29,8 @@ pub struct App {
     pub editor_state: editor::State,
     pub batch_state: batch::State,
     pub exif_state: exif::ExifData,
+    pub show_hotkeys: bool,
+    pub show_about: bool,
 }
 
 impl App {
@@ -66,6 +68,8 @@ impl App {
             editor_state: editor::State::new(),
             batch_state: batch::State::new(),
             exif_state: exif::ExifData::new(),
+            show_hotkeys: false,
+            show_about: false,
         };
 
         if let Some(ref folder) = app.config.last_folder {
@@ -262,6 +266,16 @@ impl eframe::App for App {
                             ui.close_menu();
                         }
                     });
+                    ui.menu_button("Help", |ui| {
+                        if ui.button("Hotkeys").clicked() {
+                            self.show_hotkeys = !self.show_hotkeys;
+                            ui.close_menu();
+                        }
+                        if ui.button("About").clicked() {
+                            self.show_about = !self.show_about;
+                            ui.close_menu();
+                        }
+                    });
                 });
                 // Accent bottom border
                 ui.separator();
@@ -279,6 +293,66 @@ impl eframe::App for App {
         }
 
         batch::show(self, ctx);
+
+        if self.show_hotkeys {
+            egui::Window::new("Hotkeys")
+                .open(&mut self.show_hotkeys)
+                .default_size([300.0, 200.0])
+                .show(ctx, |ui| {
+                    egui::Grid::new("hotkeys_grid").striped(true).show(ui, |ui| {
+                        ui.colored_label(crate::theme::ACCENT, "Key");
+                        ui.colored_label(crate::theme::ACCENT, "Action");
+                        ui.end_row();
+
+                        ui.label("←/→");
+                        ui.label("Prev / Next image");
+                        ui.end_row();
+
+                        ui.label("Space / F5");
+                        ui.label("Toggle slideshow");
+                        ui.end_row();
+
+                        ui.label("Esc");
+                        ui.label("Exit fullscreen");
+                        ui.end_row();
+
+                        ui.label("F11");
+                        ui.label("Toggle fullscreen");
+                        ui.end_row();
+
+                        ui.label("I");
+                        ui.label("Toggle info overlay");
+                        ui.end_row();
+
+                        ui.label("F");
+                        ui.label("Fit zoom");
+                        ui.end_row();
+
+                        ui.label("1");
+                        ui.label("100% zoom");
+                        ui.end_row();
+                    });
+                });
+        }
+
+        if self.show_about {
+            egui::Window::new("About")
+                .open(&mut self.show_about)
+                .default_size([300.0, 120.0])
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.heading(&format!("Image Viewer v{}", env!("CARGO_PKG_VERSION")));
+                        ui.colored_label(crate::theme::TEXT_SECONDARY, "MIT License");
+                        ui.add_space(8.0);
+                        ui.label("Copyright (c) 2025 morefunfun11");
+                        ui.label("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:");
+                        ui.add_space(4.0);
+                        ui.label("The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.");
+                        ui.add_space(4.0);
+                        ui.label("THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.");
+                    });
+                });
+        }
 
         ctx.request_repaint();
     }
