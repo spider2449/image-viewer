@@ -88,6 +88,26 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
             }
 
+            ui.horizontal(|ui| {
+                if ui.link("Select All").clicked() {
+                    for f in &files {
+                        app.batch_state.checked.insert(f.clone());
+                    }
+                    app.batch_state.select_all = true;
+                }
+                ui.separator();
+                if ui.link("Unselect All").clicked() {
+                    app.batch_state.checked.clear();
+                    app.batch_state.select_all = false;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let selected = app.image_files.iter()
+                        .filter(|p| app.batch_state.checked.contains(*p))
+                        .count();
+                    ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{selected}/{} selected", files.len()));
+                });
+            });
+
             egui::ScrollArea::vertical()
                 .max_height(200.0)
                 .show(ui, |ui| {
@@ -114,7 +134,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 .filter(|p| app.batch_state.checked.contains(*p))
                 .cloned()
                 .collect();
-            ui.label(format!("{} files selected", selected.len()));
 
             match app.batch_state.mode {
                 BatchMode::Convert => {
