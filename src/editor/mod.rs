@@ -212,7 +212,7 @@ fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
     let rgba = result.to_rgba8();
     let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
     let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-    app.textures.insert(tex_key, tex);
+    app.textures.put(tex_key, tex);
     app.editor_state.current_image = Some(result);
 }
 
@@ -231,7 +231,7 @@ fn undo(app: &mut App, ctx: &egui::Context) {
         let rgba = prev_img.to_rgba8();
         let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
         let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-        app.textures.insert(tex_key, tex);
+        app.textures.put(tex_key, tex);
         app.editor_state.current_image = Some(prev_img);
     }
 }
@@ -251,7 +251,7 @@ fn redo(app: &mut App, ctx: &egui::Context) {
         let rgba = next_img.to_rgba8();
         let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
         let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-        app.textures.insert(tex_key, tex);
+        app.textures.put(tex_key, tex);
         app.editor_state.current_image = Some(next_img);
     }
 }

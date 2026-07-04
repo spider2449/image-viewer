@@ -289,7 +289,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
 
         let tex_key = path.to_string_lossy().to_string();
-        if !app.textures.contains_key(&tex_key) {
+        if !app.textures.contains(&tex_key) {
             if let Err(e) = image_loader::load_to_texture(ctx, &mut app.textures, &path) {
                 ui.painter().text(
                     image_rect.center(),

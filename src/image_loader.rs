@@ -1,6 +1,6 @@
 use egui::{ColorImage, TextureHandle, TextureOptions};
 use image::{DynamicImage, GenericImageView};
-use std::collections::HashMap;
+use lru::LruCache;
 use std::path::Path;
 
 pub fn decode_to_colorimage(path: &Path) -> Result<(ColorImage, u32, u32, u8), String> {
@@ -30,13 +30,13 @@ pub fn decode_to_colorimage(path: &Path) -> Result<(ColorImage, u32, u32, u8), S
 
 pub fn load_to_texture(
     cc: &egui::Context,
-    textures: &mut HashMap<String, TextureHandle>,
+    textures: &mut LruCache<String, TextureHandle>,
     path: &Path,
 ) -> Result<(TextureHandle, u32, u32, u8), String> {
     let key = path.to_string_lossy().to_string();
     let ci = decode_to_colorimage(path)?;
     let tex = cc.load_texture(&key, ci.0, TextureOptions::LINEAR);
-    textures.insert(key.clone(), tex.clone());
+    textures.put(key.clone(), tex.clone());
     Ok((tex, ci.1, ci.2, ci.3))
 }
 

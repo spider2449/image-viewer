@@ -7,7 +7,8 @@ use crate::exif;
 use crate::thumbnail_cache::ThumbnailCache;
 use crate::viewer;
 use eframe::{egui, Frame};
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub enum Mode {
@@ -25,7 +26,7 @@ pub struct App {
     pub disk_cache: DiskCache,
     pub browser_state: browser::State,
     pub viewer_state: viewer::State,
-    pub textures: HashMap<String, egui::TextureHandle>,
+    pub textures: LruCache<String, egui::TextureHandle>,
     pub editor_state: editor::State,
     pub batch_state: batch::State,
     pub exif_state: exif::ExifData,
@@ -64,7 +65,7 @@ impl App {
             disk_cache,
             browser_state,
             viewer_state,
-            textures: HashMap::new(),
+            textures: LruCache::new(NonZeroUsize::new(8).unwrap()),
             editor_state: editor::State::new(),
             batch_state: batch::State::new(),
             exif_state: exif::ExifData::new(),
@@ -353,5 +354,22 @@ impl eframe::App for App {
         }
 
         ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_textures_lru_evicts_old_entries() {
+        let mut cache: LruCache<String, i32> = LruCache::new(NonZeroUsize::new(2).unwrap());
+        cache.put("a".to_string(), 1);
+        cache.put("b".to_string(), 2);
+        cache.put("c".to_string(), 3);
+        assert!(!cache.contains("a"), "a should be evicted");
+        assert!(cache.contains("b"));
+        assert!(cache.contains("c"));
+        assert_eq!(cache.len(), 2);
     }
 }
