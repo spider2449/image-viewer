@@ -187,6 +187,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         });
 }
 
+fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage) {
+    let path = match app.image_files.get(app.selected_image_index) {
+        Some(p) => p.clone(),
+        None => return,
+    };
+    let tex_key = path.to_string_lossy().to_string();
+    let (w, h) = img.dimensions();
+    let rgba = img.to_rgba8();
+    let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+    let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
+    app.textures.put(tex_key, tex);
+}
+
 fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
     let img = match &app.editor_state.current_image {
         Some(i) => i.clone(),
@@ -204,15 +217,7 @@ fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
     app.editor_state.resize_width = w;
     app.editor_state.resize_height = h;
 
-    let path = match app.image_files.get(app.selected_image_index) {
-        Some(p) => p.clone(),
-        None => return,
-    };
-    let tex_key = path.to_string_lossy().to_string();
-    let rgba = result.to_rgba8();
-    let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-    let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-    app.textures.put(tex_key, tex);
+    upload_texture(app, ctx, &result);
     app.editor_state.current_image = Some(result);
 }
 
@@ -223,15 +228,7 @@ fn undo(app: &mut App, ctx: &egui::Context) {
         app.editor_state.resize_width = w;
         app.editor_state.resize_height = h;
 
-        let path = match app.image_files.get(app.selected_image_index) {
-            Some(p) => p.clone(),
-            None => return,
-        };
-        let tex_key = path.to_string_lossy().to_string();
-        let rgba = prev_img.to_rgba8();
-        let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-        let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-        app.textures.put(tex_key, tex);
+        upload_texture(app, ctx, &prev_img);
         app.editor_state.current_image = Some(prev_img);
     }
 }
@@ -243,15 +240,7 @@ fn redo(app: &mut App, ctx: &egui::Context) {
         app.editor_state.resize_width = w;
         app.editor_state.resize_height = h;
 
-        let path = match app.image_files.get(app.selected_image_index) {
-            Some(p) => p.clone(),
-            None => return,
-        };
-        let tex_key = path.to_string_lossy().to_string();
-        let rgba = next_img.to_rgba8();
-        let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-        let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
-        app.textures.put(tex_key, tex);
+        upload_texture(app, ctx, &next_img);
         app.editor_state.current_image = Some(next_img);
     }
 }
