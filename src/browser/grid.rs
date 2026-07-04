@@ -333,6 +333,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
 
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
+    let saved_widths = app.config.column_widths.clone();
 
     const ICON_W: f32 = 24.0;
     const GAP: f32 = 4.0;
@@ -400,7 +401,12 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             );
 
             if ui.input(|i| i.pointer.any_released()) {
-                app.config.save();
+                if app.config.column_widths.name != saved_widths.name
+                    || app.config.column_widths.size != saved_widths.size
+                    || app.config.column_widths.date != saved_widths.date
+                {
+                    app.config.save();
+                }
             }
 
             ui.separator();
