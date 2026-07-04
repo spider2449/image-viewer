@@ -101,7 +101,7 @@ impl App {
             Some(f) => f.clone(),
             None => return,
         };
-        let mut files = Vec::new();
+        let mut files: Vec<PathBuf> = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&folder) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -122,18 +122,24 @@ impl App {
         let sort_desc = self.config.sort_descending;
         match self.config.sort_by.as_str() {
             "date" => {
-                files.sort_by(|a, b| {
-                    let a_m = std::fs::metadata(a).and_then(|m| m.modified()).ok();
-                    let b_m = std::fs::metadata(b).and_then(|m| m.modified()).ok();
-                    a_m.cmp(&b_m)
-                });
+                let mtimes: Vec<Option<std::time::SystemTime>> = files
+                    .iter()
+                    .map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+                    .collect();
+                let mut indices: Vec<usize> = (0..files.len()).collect();
+                indices.sort_by(|&a, &b| mtimes[a].cmp(&mtimes[b]));
+                let sorted: Vec<PathBuf> = indices.iter().map(|&i| files[i].clone()).collect();
+                files = sorted;
             }
             "size" => {
-                files.sort_by(|a, b| {
-                    let a_s = std::fs::metadata(a).map(|m| m.len()).unwrap_or(0);
-                    let b_s = std::fs::metadata(b).map(|m| m.len()).unwrap_or(0);
-                    a_s.cmp(&b_s)
-                });
+                let sizes: Vec<u64> = files
+                    .iter()
+                    .map(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
+                    .collect();
+                let mut indices: Vec<usize> = (0..files.len()).collect();
+                indices.sort_by(|&a, &b| sizes[a].cmp(&sizes[b]));
+                let sorted: Vec<PathBuf> = indices.iter().map(|&i| files[i].clone()).collect();
+                files = sorted;
             }
             _ => {
                 files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
