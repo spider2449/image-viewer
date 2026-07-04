@@ -359,7 +359,11 @@ impl eframe::App for App {
                 });
         }
 
-        ctx.request_repaint();
+        let slideshow_active = matches!(self.mode, Mode::Viewer) && self.viewer_state.is_slideshow;
+        let pending_thumbs = !self.image_files.is_empty() && self.thumbnail_cache.has_pending();
+        if slideshow_active || pending_thumbs {
+            ctx.request_repaint();
+        }
     }
 }
 

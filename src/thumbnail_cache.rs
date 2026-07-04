@@ -217,6 +217,10 @@ impl ThumbnailCache {
         }
     }
 
+    pub fn has_pending(&self) -> bool {
+        !self.pending.lock().unwrap().is_empty()
+    }
+
     pub fn clear(&self) {
         self.cache.lock().unwrap().clear();
         self.pending.lock().unwrap().clear();
