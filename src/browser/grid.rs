@@ -96,10 +96,6 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         return;
     }
 
-    while let Some(result) = app.thumbnail_cache.poll() {
-        app.browser_state.thumbnails.insert(result.path, result.image);
-    }
-
     let (scroll, mods) = ui.input(|i| (i.raw_scroll_delta, i.modifiers));
     if mods.ctrl && scroll.y != 0.0 {
         let step = if scroll.y > 0.0 { 10.0 } else { -10.0 };
