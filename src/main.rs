@@ -8,6 +8,7 @@ mod disk_cache;
 mod editor;
 mod exif;
 mod font_loader;
+mod format_ext;
 mod image_loader;
 mod theme;
 mod thumbnail_cache;

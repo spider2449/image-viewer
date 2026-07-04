@@ -282,9 +282,10 @@ fn save_as(app: &mut App) {
         None => return,
     };
 
-    let new_ext = &app.editor_state.save_format;
+    let save_format = app.editor_state.save_format;
+    let new_ext = crate::format_ext::format_to_extension(save_format);
     let new_name = path.with_extension(new_ext);
-    let result = match *new_ext {
+    let result = match save_format {
         "jpeg" => {
             let mut output = match std::fs::File::create(&new_name) {
                 Ok(f) => f,

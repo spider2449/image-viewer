@@ -12,7 +12,7 @@ pub fn batch_convert(
             Ok(i) => i,
             Err(e) => { errors.push(format!("{}: {e}", path.display())); continue; }
         };
-        let new_ext = if format == "jpeg" { "jpg" } else { format };
+        let new_ext = crate::format_ext::format_to_extension(format);
         let new_name = path.with_extension(new_ext);
         let result = match format {
             "jpeg" => {

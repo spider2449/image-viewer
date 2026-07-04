@@ -105,16 +105,8 @@ impl App {
         if let Ok(entries) = std::fs::read_dir(&folder) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(ext) = path.extension() {
-                        let ext = ext.to_string_lossy().to_lowercase();
-                        match ext.as_str() {
-                            "png" | "jpg" | "jpeg" | "bmp" | "gif" | "tiff" | "tif" | "webp" => {
-                                files.push(path);
-                            }
-                            _ => {}
-                        }
-                    }
+                if path.is_file() && crate::format_ext::is_supported_extension(&path) {
+                    files.push(path);
                 }
             }
         }
