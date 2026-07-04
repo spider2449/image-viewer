@@ -216,18 +216,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     match key {
                         egui::Key::ArrowLeft => {
                             if !app.viewer_state.is_slideshow {
-                                let prev =
-                                    app.selected_image_index.saturating_sub(1);
-                                app.selected_image_index = prev;
-                                app.viewer_state.image_loaded = false;
+                                app.prev_image();
                             }
                         }
                         egui::Key::ArrowRight => {
-                            if !app.viewer_state.is_slideshow
-                                && app.selected_image_index + 1 < app.image_files.len()
-                            {
-                                app.selected_image_index += 1;
-                                app.viewer_state.image_loaded = false;
+                            if !app.viewer_state.is_slideshow {
+                                app.next_image();
                             }
                         }
                         egui::Key::Escape => {
