@@ -12,6 +12,69 @@ pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(0x88, 0x88, 0x88);
 pub const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
 pub const DANGER: Color32 = Color32::from_rgb(0xe7, 0x4c, 0x3c);
 
+// ── Theme switch (light/dark) ─────────────────────────────
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    Dark,
+    Light,
+}
+
+impl Theme {
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Theme {
+        match s {
+            "light" => Theme::Light,
+            _ => Theme::Dark,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct ThemeColors {
+    pub bg_dark: Color32,
+    pub panel_bg: Color32,
+    pub card_bg: Color32,
+    pub hover_bg: Color32,
+    pub accent: Color32,
+    pub selected_bg: Color32,
+    pub text_primary: Color32,
+    pub text_secondary: Color32,
+    pub border: Color32,
+    pub danger: Color32,
+}
+
+#[allow(dead_code)]
+pub fn palette(theme: Theme) -> ThemeColors {
+    match theme {
+        Theme::Dark => ThemeColors {
+            bg_dark: Color32::from_rgb(0x1a, 0x1a, 0x1a),
+            panel_bg: Color32::from_rgb(0x22, 0x22, 0x22),
+            card_bg: Color32::from_rgb(0x2a, 0x2a, 0x2a),
+            hover_bg: Color32::from_rgb(0x35, 0x35, 0x35),
+            accent: Color32::from_rgb(0x4a, 0x9e, 0xff),
+            selected_bg: Color32::from_rgb(0x2d, 0x5a, 0x8e),
+            text_primary: Color32::from_rgb(0xe0, 0xe0, 0xe0),
+            text_secondary: Color32::from_rgb(0x88, 0x88, 0x88),
+            border: Color32::from_rgb(0x3a, 0x3a, 0x3a),
+            danger: Color32::from_rgb(0xe7, 0x4c, 0x3c),
+        },
+        Theme::Light => ThemeColors {
+            bg_dark: Color32::from_rgb(0xff, 0xff, 0xff),
+            panel_bg: Color32::from_rgb(0xf5, 0xf5, 0xf5),
+            card_bg: Color32::from_rgb(0xe8, 0xe8, 0xe8),
+            hover_bg: Color32::from_rgb(0xdc, 0xdc, 0xdc),
+            accent: Color32::from_rgb(0x1a, 0x6d, 0xd6),
+            selected_bg: Color32::from_rgb(0xa8, 0xc8, 0xf0),
+            text_primary: Color32::from_rgb(0x1a, 0x1a, 0x1a),
+            text_secondary: Color32::from_rgb(0x66, 0x66, 0x66),
+            border: Color32::from_rgb(0xcc, 0xcc, 0xcc),
+            danger: Color32::from_rgb(0xc0, 0x39, 0x2b),
+        },
+    }
+}
+
 // ── Convenient icon wrapper ────────────────────────────────
 pub fn styled_icon(codepoint: &str) -> egui::RichText {
     egui::RichText::new(codepoint).size(14.0).color(ACCENT)
@@ -101,5 +164,53 @@ pub fn theme_style() -> Style {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_palette_dark_matches_old_constants() {
+        let c = palette(Theme::Dark);
+        assert_eq!(c.bg_dark, Color32::from_rgb(0x1a, 0x1a, 0x1a));
+        assert_eq!(c.panel_bg, Color32::from_rgb(0x22, 0x22, 0x22));
+        assert_eq!(c.card_bg, Color32::from_rgb(0x2a, 0x2a, 0x2a));
+        assert_eq!(c.hover_bg, Color32::from_rgb(0x35, 0x35, 0x35));
+        assert_eq!(c.accent, Color32::from_rgb(0x4a, 0x9e, 0xff));
+        assert_eq!(c.selected_bg, Color32::from_rgb(0x2d, 0x5a, 0x8e));
+        assert_eq!(c.text_primary, Color32::from_rgb(0xe0, 0xe0, 0xe0));
+        assert_eq!(c.text_secondary, Color32::from_rgb(0x88, 0x88, 0x88));
+        assert_eq!(c.border, Color32::from_rgb(0x3a, 0x3a, 0x3a));
+        assert_eq!(c.danger, Color32::from_rgb(0xe7, 0x4c, 0x3c));
+    }
+
+    #[test]
+    fn test_palette_light_distinct_from_dark() {
+        let dark = palette(Theme::Dark);
+        let light = palette(Theme::Light);
+        let diffs = [
+            dark.bg_dark != light.bg_dark,
+            dark.panel_bg != light.panel_bg,
+            dark.card_bg != light.card_bg,
+            dark.hover_bg != light.hover_bg,
+            dark.accent != light.accent,
+            dark.selected_bg != light.selected_bg,
+            dark.text_primary != light.text_primary,
+            dark.text_secondary != light.text_secondary,
+            dark.border != light.border,
+            dark.danger != light.danger,
+        ];
+        let count = diffs.iter().filter(|&&d| d).count();
+        assert!(count >= 8, "expected at least 8 of 10 colors to differ, got {count}");
+    }
+
+    #[test]
+    fn test_theme_from_str() {
+        assert_eq!(Theme::from_str("dark"), Theme::Dark);
+        assert_eq!(Theme::from_str("light"), Theme::Light);
+        assert_eq!(Theme::from_str("nonsense"), Theme::Dark);
+        assert_eq!(Theme::from_str(""), Theme::Dark);
     }
 }
