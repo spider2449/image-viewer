@@ -4,6 +4,7 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -36,6 +37,7 @@ pub struct ThumbnailCache {
     sender: Sender<ThumbnailRequest>,
     receiver: Receiver<ThumbnailResult>,
     disk_cache: Option<Arc<DiskCache>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl ThumbnailCache {
@@ -48,6 +50,7 @@ impl ThumbnailCache {
             LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(256).unwrap())),
         ));
         let pending: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let shutdown = Arc::new(AtomicBool::new(false));
 
         let disk_cache = disk_cache.map(Arc::new);
         let req_rx = Arc::new(Mutex::new(req_rx));
@@ -56,8 +59,12 @@ impl ThumbnailCache {
         if let Some(ref dc) = disk_cache {
             let dc = dc.clone();
             let store_rx = Arc::new(Mutex::new(store_rx));
+            let sd = shutdown.clone();
             thread::spawn(move || {
                 loop {
+                    if sd.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let req = {
                         let rx = store_rx.lock().unwrap();
                         match rx.try_recv() {
@@ -85,9 +92,13 @@ impl ThumbnailCache {
             let req_rx = req_rx.clone();
             let dc = disk_cache.clone();
             let store_tx = store_tx.clone();
+            let sd = shutdown.clone();
 
             thread::spawn(move || {
                 loop {
+                    if sd.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let req = {
                         let rx = req_rx.lock().unwrap();
                         match rx.try_recv() {
@@ -171,6 +182,7 @@ impl ThumbnailCache {
             sender: req_tx,
             receiver: res_rx,
             disk_cache,
+            shutdown,
         }
     }
 
@@ -202,6 +214,49 @@ impl ThumbnailCache {
     pub fn clear_disk_cache(&self) {
         if let Some(ref dc) = self.disk_cache {
             dc.clear_all();
+        }
+    }
+
+    pub fn clear(&self) {
+        self.cache.lock().unwrap().clear();
+        self.pending.lock().unwrap().clear();
+    }
+}
+
+impl Drop for ThumbnailCache {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shutdown_flag_set_on_drop() {
+        let cache = ThumbnailCache::new(16, 1, None);
+        let sd = cache.shutdown.clone();
+        drop(cache);
+        assert!(sd.load(Ordering::Relaxed), "shutdown flag must be true after drop");
+    }
+
+    #[test]
+    fn test_clear_empties_cache_and_pending() {
+        let cache = ThumbnailCache::new(16, 1, None);
+        cache.request(PathBuf::from("test.png"), 100);
+        {
+            let p = cache.pending.lock().unwrap();
+            assert_eq!(p.len(), 1);
+        }
+        cache.clear();
+        {
+            let p = cache.pending.lock().unwrap();
+            assert!(p.is_empty(), "pending must be empty after clear");
+        }
+        {
+            let c = cache.cache.lock().unwrap();
+            assert!(c.is_empty(), "cache must be empty after clear");
         }
     }
 }

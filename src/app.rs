@@ -91,9 +91,7 @@ impl App {
     }
 
     pub fn scan_folder(&mut self) {
-        // Drop old thumbnail cache (channels close → old worker threads exit on Disconnected)
-        // and create a fresh one so new folder gets dedicated threads with no stale requests.
-        self.thumbnail_cache = ThumbnailCache::new(512, 4, Some(self.disk_cache.clone()));
+        self.thumbnail_cache.clear();
         self.textures.clear();
         self.browser_state.thumbnails.clear();
         self.browser_state.thumb_textures.clear();
