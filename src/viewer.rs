@@ -44,17 +44,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     };
 
     let is_fullscreen = app.viewer_state.is_fullscreen;
+    let colors = app.theme_colors();
 
     if !is_fullscreen {
         egui::TopBottomPanel::top("viewer_toolbar")
             .frame(egui::Frame {
-                fill: crate::theme::PANEL_BG,
+                fill: colors.panel_bg,
                 ..Default::default()
             })
             .show(ctx, |ui| {
+                let colors = colors;
                 ui.horizontal(|ui| {
                     // Navigation group
-                    if ui.button(egui::RichText::new("\u{2190} Browser").color(crate::theme::ACCENT)).clicked() {
+                    if ui.button(egui::RichText::new("\u{2190} Browser").color(colors.accent)).clicked() {
                         app.mode = Mode::Browser;
                         app.viewer_state.image_loaded = false;
                     }
@@ -75,7 +77,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.viewer_state.zoom = 1.0;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
-                    ui.colored_label(crate::theme::TEXT_SECONDARY, "Zoom:");
+                    ui.colored_label(colors.text_secondary, "Zoom:");
                     let mut zoom_pct = (app.viewer_state.zoom * 100.0) as i32;
                     if ui
                         .add(egui::Slider::new(&mut zoom_pct, 10..=3200).text("%"))
@@ -114,13 +116,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(crate::theme::TEXT_SECONDARY, format!(
+                        ui.colored_label(colors.text_secondary, format!(
                             "{}/{}",
                             app.selected_image_index + 1,
                             app.image_files.len()
                         ));
                         if let Some(name) = path.file_name() {
-                            ui.colored_label(crate::theme::TEXT_SECONDARY, name.to_string_lossy().to_string());
+                            ui.colored_label(colors.text_secondary, name.to_string_lossy().to_string());
                         }
                     });
                 });
@@ -180,15 +182,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     egui::TopBottomPanel::bottom("viewer_status")
         .frame(egui::Frame {
-            fill: crate::theme::PANEL_BG,
+            fill: colors.panel_bg,
             ..Default::default()
         })
         .show(ctx, |ui| {
+            let colors = colors;
             ui.horizontal(|ui| {
                 let z = app.viewer_state.zoom;
                 let px = app.viewer_state.pan_offset.x;
                 let py = app.viewer_state.pan_offset.y;
-                ui.colored_label(crate::theme::TEXT_SECONDARY,
+                ui.colored_label(colors.text_secondary,
                     format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0));
                 ui.separator();
                 if let Ok(meta) = std::fs::metadata(&path) {
@@ -200,7 +203,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     } else {
                         format!("{sz} B")
                     };
-                    ui.colored_label(crate::theme::TEXT_SECONDARY, size_str);
+                    ui.colored_label(colors.text_secondary, size_str);
                 }
             });
         });
@@ -310,6 +313,7 @@ fn draw_image(
     available: Vec2,
     path: &PathBuf,
 ) {
+    let colors = app.theme_colors();
     let tex_size = tex.size_vec2();
     let zoom = app.viewer_state.zoom;
 
@@ -363,7 +367,7 @@ fn draw_image(
     ui.painter().rect_stroke(
         border_rect,
         egui::CornerRadius::ZERO,
-        egui::Stroke::new(1.0, crate::theme::BORDER),
+        egui::Stroke::new(1.0, colors.border),
         egui::StrokeKind::Inside,
     );
 
