@@ -251,6 +251,16 @@ impl eframe::App for App {
                             self.browser_state.show_list_view = !self.browser_state.show_list_view;
                             ui.close_menu();
                         }
+                        ui.separator();
+                        let next_theme = if self.config.theme == "light" { "Dark" } else { "Light" };
+                        if ui.button(format!("Switch to {next_theme} Theme")).clicked() {
+                            self.config.theme = next_theme.to_lowercase();
+                            self.config.save();
+                            ctx.set_visuals(crate::theme::theme_visuals(
+                                crate::theme::Theme::from_str(&self.config.theme),
+                            ));
+                            ui.close_menu();
+                        }
                     });
                     ui.menu_button("Tools", |ui| {
                         if ui.button("Batch Convert").clicked() {

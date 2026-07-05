@@ -1,19 +1,6 @@
 use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Style, Visuals, Vec2};
 
-// ── Color palette ──────────────────────────────────────────
-pub const BG_DARK: Color32 = Color32::from_rgb(0x1a, 0x1a, 0x1a);
-pub const PANEL_BG: Color32 = Color32::from_rgb(0x22, 0x22, 0x22);
-pub const CARD_BG: Color32 = Color32::from_rgb(0x2a, 0x2a, 0x2a);
-pub const HOVER_BG: Color32 = Color32::from_rgb(0x35, 0x35, 0x35);
-pub const ACCENT: Color32 = Color32::from_rgb(0x4a, 0x9e, 0xff);
-pub const SELECTED_BG: Color32 = Color32::from_rgb(0x2d, 0x5a, 0x8e);
-pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xe0, 0xe0, 0xe0);
-pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(0x88, 0x88, 0x88);
-pub const BORDER: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x3a);
-pub const DANGER: Color32 = Color32::from_rgb(0xe7, 0x4c, 0x3c);
-
 // ── Theme switch (light/dark) ─────────────────────────────
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Theme {
     Dark,
@@ -21,7 +8,6 @@ pub enum Theme {
 }
 
 impl Theme {
-    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Theme {
         match s {
             "light" => Theme::Light,
@@ -30,7 +16,6 @@ impl Theme {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeColors {
     pub bg_dark: Color32,
@@ -45,7 +30,6 @@ pub struct ThemeColors {
     pub danger: Color32,
 }
 
-#[allow(dead_code)]
 pub fn palette(theme: Theme) -> ThemeColors {
     match theme {
         Theme::Dark => ThemeColors {
