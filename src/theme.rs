@@ -76,8 +76,8 @@ pub fn palette(theme: Theme) -> ThemeColors {
 }
 
 // ── Convenient icon wrapper ────────────────────────────────
-pub fn styled_icon(codepoint: &str) -> egui::RichText {
-    egui::RichText::new(codepoint).size(14.0).color(ACCENT)
+pub fn styled_icon(codepoint: &str, colors: &ThemeColors) -> egui::RichText {
+    egui::RichText::new(codepoint).size(14.0).color(colors.accent)
 }
 
 // ── Build the global Visuals ───────────────────────────────

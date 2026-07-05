@@ -10,7 +10,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     let mut size_changed = false;
     // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
-        ui.label(crate::theme::styled_icon("\u{25C0}"));
+        ui.label(crate::theme::styled_icon("\u{25C0}", &crate::theme::palette(crate::theme::Theme::Dark)));
         if ui.button("Back").clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
