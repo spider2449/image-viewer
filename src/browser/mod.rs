@@ -37,6 +37,7 @@ impl State {
 }
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
+    let colors = app.theme_colors();
     if app.browser_state.tree_nodes.is_empty() {
         let roots: Vec<PathBuf> = if cfg!(windows) {
             (b'A'..=b'Z')
@@ -65,7 +66,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             full_rect.min,
             egui::vec2(tree_w, full_rect.height()),
         );
-        ui.painter().rect_filled(tree_rect, egui::CornerRadius::same(0), crate::theme::PANEL_BG);
+        ui.painter().rect_filled(tree_rect, egui::CornerRadius::same(0), colors.panel_bg);
 
         #[allow(deprecated)]
         ui.allocate_ui_at_rect(tree_rect.shrink2(egui::vec2(4.0, 4.0)), |ui| {
@@ -91,7 +92,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
         }
 
-        ui.painter().vline(handle_x, tree_rect.top()..=tree_rect.bottom(), egui::Stroke::new(1.0, crate::theme::BORDER));
+        ui.painter().vline(handle_x, tree_rect.top()..=tree_rect.bottom(), egui::Stroke::new(1.0, colors.border));
 
         // ── Grid / list view (right side) ───────────────────
         let grid_rect = egui::Rect::from_min_size(
