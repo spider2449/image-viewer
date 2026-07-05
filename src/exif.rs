@@ -162,7 +162,7 @@ fn format_gps_coords(field: &exif::Field, dir: &str) -> String {
     format!("{} {}", field.value.display_as(field.tag), dir)
 }
 
-pub fn show(data: &mut ExifData, ctx: &egui::Context) {
+pub fn show(data: &mut ExifData, ctx: &egui::Context, colors: &crate::theme::ThemeColors) {
     if !data.visible {
         return;
     }
@@ -170,7 +170,7 @@ pub fn show(data: &mut ExifData, ctx: &egui::Context) {
     egui::SidePanel::right("exif_panel")
         .resizable(true)
         .frame(egui::Frame {
-            fill: crate::theme::PANEL_BG,
+            fill: colors.panel_bg,
             inner_margin: egui::Margin::symmetric(8, 8),
             ..Default::default()
         })
@@ -182,9 +182,9 @@ pub fn show(data: &mut ExifData, ctx: &egui::Context) {
                 ui.separator();
                 for (i, (label, value)) in data.entries.iter().enumerate() {
                     let row_bg = if i % 2 == 0 {
-                        crate::theme::PANEL_BG
+                        colors.panel_bg
                     } else {
-                        crate::theme::CARD_BG
+                        colors.card_bg
                     };
                     let (rect, _) = ui.allocate_exact_size(
                         egui::Vec2::new(ui.available_width(), 20.0),
@@ -194,8 +194,8 @@ pub fn show(data: &mut ExifData, ctx: &egui::Context) {
                     #[allow(deprecated)]
                     let mut child_ui = ui.child_ui(rect, *ui.layout(), None);
                     child_ui.horizontal(|ui| {
-                        ui.colored_label(crate::theme::ACCENT, format!("{label}:"));
-                        ui.colored_label(crate::theme::TEXT_PRIMARY, value);
+                        ui.colored_label(colors.accent, format!("{label}:"));
+                        ui.colored_label(colors.text_primary, value);
                     });
                 }
             });

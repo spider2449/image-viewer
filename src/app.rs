@@ -289,9 +289,10 @@ impl eframe::App for App {
                 browser::show(self, ctx);
             }
             Mode::Viewer => {
+                let colors = self.theme_colors();
                 viewer::show(self, ctx);
                 editor::show(self, ctx);
-                exif::show(&mut self.exif_state, ctx);
+                exif::show(&mut self.exif_state, ctx, &colors);
             }
         }
 

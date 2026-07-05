@@ -183,7 +183,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                         } else if hovered {
                             colors.accent
                         } else {
-                            crate::theme::BORDER
+                            colors.border
                         };
                         let border_width: f32 = if is_selected { 2.0 } else { 1.0 };
 

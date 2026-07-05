@@ -66,6 +66,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         return;
     }
 
+    let colors = app.theme_colors();
     let mut open = true;
     egui::Window::new("Batch Tool")
         .open(&mut open)
@@ -73,6 +74,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .default_size([600.0, 500.0])
         .show(ctx, |ui| {
+            let colors = colors;
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut app.batch_state.mode, BatchMode::Convert, "Convert");
                 ui.selectable_value(&mut app.batch_state.mode, BatchMode::Rename, "Rename");
@@ -103,7 +105,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     let selected = app.image_files.iter()
                         .filter(|p| app.batch_state.checked.contains(*p))
                         .count();
-                    ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{selected}/{} selected", files.len()));
+                    ui.colored_label(colors.text_secondary, format!("{selected}/{} selected", files.len()));
                 });
             });
 
@@ -148,7 +150,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         ui.add(egui::Slider::new(&mut app.batch_state.jpeg_quality, 1..=100).text("Quality"));
                     }
                     if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                        egui::RichText::new("Apply").color(colors.accent)
                     )).clicked() {
                         app.batch_state.running = true;
                         app.batch_state.progress_total = selected.len();
@@ -180,7 +182,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         ui.label(format!("Preview: {}", preview_name));
                     }
                     if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                        egui::RichText::new("Apply").color(colors.accent)
                     )).clicked() {
                         app.batch_state.running = true;
                         let pattern = app.batch_state.rename_pattern.clone();
@@ -212,7 +214,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     });
                     ui.checkbox(&mut app.batch_state.resize_lock_aspect, "Lock aspect ratio");
                     if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(crate::theme::ACCENT)
+                        egui::RichText::new("Apply").color(colors.accent)
                     )).clicked() {
                         app.batch_state.running = true;
                         let w = app.batch_state.resize_width;
