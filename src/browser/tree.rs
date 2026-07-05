@@ -157,10 +157,8 @@ fn show_node(
                 colors.text_primary
             } else if depth == 0 {
                 colors.accent
-            } else if depth == 1 {
-                egui::Color32::from_rgb(0xe0, 0xe0, 0xc0)
             } else {
-                egui::Color32::from_rgb(0xc0, 0xd0, 0xc0)
+                colors.text_primary
             };
             let label = ui.colored_label(label_color, &node.name)
                 .on_hover_cursor(egui::CursorIcon::PointingHand);

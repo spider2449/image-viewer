@@ -67,11 +67,17 @@ pub fn styled_icon(codepoint: &str, colors: &ThemeColors) -> egui::RichText {
 // ── Build the global Visuals ───────────────────────────────
 pub fn theme_visuals(theme: Theme) -> Visuals {
     let c = palette(theme);
+    let base = if theme == Theme::Dark {
+        Visuals::dark()
+    } else {
+        Visuals::light()
+    };
     Visuals {
         dark_mode: theme == Theme::Dark,
         override_text_color: Some(c.text_primary),
         window_corner_radius: CornerRadius::same(6),
         window_stroke: Stroke::new(1.0, c.border),
+        window_fill: c.panel_bg,
         panel_fill: c.panel_bg,
         faint_bg_color: c.bg_dark,
         extreme_bg_color: c.bg_dark,
@@ -125,7 +131,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 expansion: 0.0,
             },
         },
-        ..Default::default()
+        ..base
     }
 }
 
