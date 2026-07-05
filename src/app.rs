@@ -47,8 +47,8 @@ impl App {
         cc.egui_ctx.set_fonts(fonts);
         let config = Config::load();
         let theme = crate::theme::Theme::from_str(&config.theme);
-        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(theme));
         cc.egui_ctx.set_style(crate::theme::theme_style());
+        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(theme));
 
         let cache_dir = Self::cache_dir();
         let disk_cache = DiskCache::new(cache_dir.join("thumbnails"));
