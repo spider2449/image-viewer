@@ -45,10 +45,11 @@ impl App {
                 .insert(0, "cjk".to_owned());
         }
         cc.egui_ctx.set_fonts(fonts);
-        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(crate::theme::Theme::Dark));
+        let config = Config::load();
+        let theme = crate::theme::Theme::from_str(&config.theme);
+        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(theme));
         cc.egui_ctx.set_style(crate::theme::theme_style());
 
-        let config = Config::load();
         let cache_dir = Self::cache_dir();
         let disk_cache = DiskCache::new(cache_dir.join("thumbnails"));
         let thumbnail_cache = ThumbnailCache::new(512, 4, Some(disk_cache.clone()));
@@ -82,6 +83,10 @@ impl App {
         }
 
         app
+    }
+
+    pub fn theme_colors(&self) -> crate::theme::ThemeColors {
+        crate::theme::palette(crate::theme::Theme::from_str(&self.config.theme))
     }
 
     fn cache_dir() -> PathBuf {
