@@ -7,10 +7,11 @@ const THUMB_PADDING: f32 = 8.0;
 const LABEL_HEIGHT: f32 = 30.0;
 
 pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
+    let colors = app.theme_colors();
     let mut size_changed = false;
     // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
-        ui.label(crate::theme::styled_icon("\u{25C0}", &crate::theme::palette(crate::theme::Theme::Dark)));
+        ui.label(crate::theme::styled_icon("\u{25C0}", &colors));
         if ui.button("Back").clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
@@ -67,7 +68,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             app.scan_folder();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.colored_label(crate::theme::TEXT_SECONDARY, format!("{} files", app.image_files.len()));
+            ui.colored_label(colors.text_secondary, format!("{} files", app.image_files.len()));
         });
     });
 
@@ -83,7 +84,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     ui.label(
         egui::RichText::new(&folder_name)
             .size(18.0)
-            .color(crate::theme::TEXT_PRIMARY)
+            .color(colors.text_primary)
             .strong(),
     );
     ui.add_space(8.0);
@@ -91,7 +92,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     if app.image_files.is_empty() {
         ui.allocate_space(ui.available_size());
         ui.centered_and_justified(|ui| {
-            ui.colored_label(crate::theme::TEXT_SECONDARY, "No images found in this folder.");
+            ui.colored_label(colors.text_secondary, "No images found in this folder.");
         });
         return;
     }
@@ -130,6 +131,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
 fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
     let paths: Vec<PathBuf> = app.image_files.clone();
     let ctx = ui.ctx().clone();
+    let colors = app.theme_colors();
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -172,14 +174,14 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
 
                         // Card background
                         let card_bg = if is_selected {
-                            crate::theme::SELECTED_BG
+                            colors.selected_bg
                         } else {
-                            crate::theme::CARD_BG
+                            colors.card_bg
                         };
                         let border_color = if is_selected {
-                            crate::theme::ACCENT
+                            colors.accent
                         } else if hovered {
-                            crate::theme::ACCENT
+                            colors.accent
                         } else {
                             crate::theme::BORDER
                         };
@@ -235,7 +237,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 egui::Align2::CENTER_CENTER,
                                 "\u{2716}",
                                 egui::FontId::proportional(20.0),
-                                crate::theme::DANGER,
+                                colors.danger,
                             );
                         } else {
                             ui.painter().text(
@@ -243,7 +245,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 egui::Align2::CENTER_CENTER,
                                 "...",
                                 egui::FontId::proportional(20.0),
-                                crate::theme::ACCENT,
+                                colors.accent,
                             );
                         }
 
@@ -266,7 +268,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             egui::Align2::LEFT_CENTER,
                             &display_name,
                             egui::FontId::proportional(11.0),
-                            crate::theme::TEXT_SECONDARY,
+                            colors.text_secondary,
                         );
 
                         // Context menu
@@ -330,6 +332,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
     let saved_widths = app.config.column_widths.clone();
+    let colors = app.theme_colors();
 
     const ICON_W: f32 = 24.0;
     const GAP: f32 = 4.0;
@@ -351,7 +354,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 egui::Sense::hover(),
             );
 
-            ui.painter().rect_filled(header_rect, egui::CornerRadius::same(2), crate::theme::PANEL_BG);
+            ui.painter().rect_filled(header_rect, egui::CornerRadius::same(2), colors.panel_bg);
 
             let mut x = header_rect.min.x;
             let header_y = header_rect.min.y;
@@ -365,10 +368,10 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 egui::Align2::LEFT_CENTER,
                 "Name",
                 egui::FontId::proportional(14.0),
-                crate::theme::TEXT_PRIMARY,
+                colors.text_primary,
             );
             x += widths.name;
-            x = drag_handle(ui, egui::Id::new("drag_name"), x, header_y, header_h, HANDLE_W, |d| {
+            x = drag_handle(ui, egui::Id::new("drag_name"), x, header_y, header_h, HANDLE_W, colors.border, |d| {
                 app.config.column_widths.name = (app.config.column_widths.name + d).max(MIN_W);
             });
             x += GAP;
@@ -379,10 +382,10 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 egui::Align2::LEFT_CENTER,
                 "Size",
                 egui::FontId::proportional(14.0),
-                crate::theme::TEXT_PRIMARY,
+                colors.text_primary,
             );
             x += widths.size;
-            x = drag_handle(ui, egui::Id::new("drag_size"), x, header_y, header_h, HANDLE_W, |d| {
+            x = drag_handle(ui, egui::Id::new("drag_size"), x, header_y, header_h, HANDLE_W, colors.border, |d| {
                 app.config.column_widths.size = (app.config.column_widths.size + d).max(MIN_W);
             });
             x += GAP;
@@ -393,7 +396,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 egui::Align2::LEFT_CENTER,
                 "Date",
                 egui::FontId::proportional(14.0),
-                crate::theme::TEXT_PRIMARY,
+                colors.text_primary,
             );
 
             if ui.input(|i| i.pointer.any_released()) {
@@ -411,11 +414,11 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             for (i, path) in paths.iter().enumerate() {
                 let is_selected = app.browser_state.selected_thumb == Some(i);
                 let row_bg = if is_selected {
-                    crate::theme::SELECTED_BG
+                    colors.selected_bg
                 } else if i % 2 == 0 {
-                    crate::theme::PANEL_BG
+                    colors.panel_bg
                 } else {
-                    crate::theme::CARD_BG
+                    colors.card_bg
                 };
 
                 let row_h = 24.0;
@@ -425,7 +428,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 );
 
                 let actual_bg = if response.hovered() && !is_selected {
-                    crate::theme::HOVER_BG
+                    colors.hover_bg
                 } else {
                     row_bg
                 };
@@ -442,7 +445,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     egui::Align2::CENTER_CENTER,
                     "\u{1F5BC}",
                     egui::FontId::proportional(12.0),
-                    crate::theme::TEXT_SECONDARY,
+                    colors.text_secondary,
                 );
                 x += ICON_W;
 
@@ -450,7 +453,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 let name = path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                let name_color = if is_selected { crate::theme::TEXT_PRIMARY } else { crate::theme::TEXT_SECONDARY };
+                let name_color = if is_selected { colors.text_primary } else { colors.text_secondary };
                 ui.painter().text(
                     egui::pos2(x + 4.0, cy),
                     egui::Align2::LEFT_CENTER,
@@ -470,7 +473,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     egui::Align2::RIGHT_CENTER,
                     &size_str,
                     egui::FontId::proportional(12.0),
-                    crate::theme::TEXT_SECONDARY,
+                    colors.text_secondary,
                 );
                 x += widths.size + GAP;
 
@@ -492,7 +495,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     egui::Align2::RIGHT_CENTER,
                     &date_str,
                     egui::FontId::proportional(12.0),
-                    crate::theme::TEXT_SECONDARY,
+                    colors.text_secondary,
                 );
 
                 if response.double_clicked() {
@@ -530,6 +533,7 @@ fn drag_handle(
     header_y: f32,
     header_h: f32,
     handle_w: f32,
+    border_color: egui::Color32,
     mut on_drag: impl FnMut(f32),
 ) -> f32 {
     let handle_rect = egui::Rect::from_min_size(
@@ -538,7 +542,7 @@ fn drag_handle(
     );
     let resp = ui.interact(handle_rect, id, egui::Sense::click_and_drag());
 
-    ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0, crate::theme::BORDER));
+    ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0, border_color));
 
     if resp.drag_started() || resp.dragged() || resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
