@@ -45,7 +45,7 @@ impl App {
                 .insert(0, "cjk".to_owned());
         }
         cc.egui_ctx.set_fonts(fonts);
-        cc.egui_ctx.set_visuals(crate::theme::theme_visuals());
+        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(crate::theme::Theme::Dark));
         cc.egui_ctx.set_style(crate::theme::theme_style());
 
         let config = Config::load();
