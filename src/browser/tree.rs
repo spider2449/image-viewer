@@ -109,11 +109,12 @@ fn show_node(
     let indent = depth as f32 * 16.0;
     let has_children = node.has_subdirs || !node.children.is_empty();
     let expanded = app.browser_state.expanded_paths.contains(&node.path);
+    let colors = app.theme_colors();
 
     let bg = if is_selected {
-        crate::theme::SELECTED_BG
+        colors.selected_bg
     } else {
-        crate::theme::PANEL_BG
+        colors.panel_bg
     };
 
     let frame_resp = egui::Frame {
@@ -143,7 +144,7 @@ fn show_node(
             }
 
             let icon_color = if depth == 0 {
-                crate::theme::ACCENT
+                colors.accent
             } else if depth == 1 {
                 egui::Color32::from_rgb(0xf0, 0xc0, 0x40)
             } else {
@@ -153,9 +154,9 @@ fn show_node(
             ui.add_space(4.0);
 
             let label_color = if is_selected {
-                crate::theme::TEXT_PRIMARY
+                colors.text_primary
             } else if depth == 0 {
-                crate::theme::ACCENT
+                colors.accent
             } else if depth == 1 {
                 egui::Color32::from_rgb(0xe0, 0xe0, 0xc0)
             } else {
