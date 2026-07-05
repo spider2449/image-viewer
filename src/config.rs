@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnWidths {
     pub name: f32,
@@ -29,6 +33,8 @@ pub struct Config {
     pub zoom_default: f32,
     pub column_widths: ColumnWidths,
     pub thumb_size: f32,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for Config {
@@ -43,6 +49,7 @@ impl Default for Config {
             zoom_default: 1.0,
             column_widths: ColumnWidths::default(),
             thumb_size: 140.0,
+            theme: default_theme(),
         }
     }
 }
