@@ -208,12 +208,13 @@ impl eframe::App for App {
 
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame {
-                fill: crate::theme::PANEL_BG,
+                fill: self.theme_colors().panel_bg,
                 ..Default::default()
             })
             .show(ctx, |ui| {
                 egui::menu::bar(ui, |ui| {
-                    ui.style_mut().visuals.widgets.inactive.bg_fill = crate::theme::PANEL_BG;
+                    let panel_bg = self.theme_colors().panel_bg;
+                    ui.style_mut().visuals.widgets.inactive.bg_fill = panel_bg;
                     ui.menu_button("File", |ui| {
                         if ui.button("Refresh").clicked() {
                             self.scan_folder();
@@ -297,13 +298,15 @@ impl eframe::App for App {
         batch::show(self, ctx);
 
         if self.show_hotkeys {
+            let colors = self.theme_colors();
             egui::Window::new("Hotkeys")
                 .open(&mut self.show_hotkeys)
                 .default_size([300.0, 200.0])
                 .show(ctx, |ui| {
                     egui::Grid::new("hotkeys_grid").striped(true).show(ui, |ui| {
-                        ui.colored_label(crate::theme::ACCENT, "Key");
-                        ui.colored_label(crate::theme::ACCENT, "Action");
+                        let accent = colors.accent;
+                        ui.colored_label(accent, "Key");
+                        ui.colored_label(accent, "Action");
                         ui.end_row();
 
                         ui.label("←/→");
@@ -338,13 +341,14 @@ impl eframe::App for App {
         }
 
         if self.show_about {
+            let colors = self.theme_colors();
             egui::Window::new("About")
                 .open(&mut self.show_about)
                 .default_size([300.0, 120.0])
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
                         ui.heading(&format!("Image Viewer v{}", env!("CARGO_PKG_VERSION")));
-                        ui.colored_label(crate::theme::TEXT_SECONDARY, "MIT License");
+                        ui.colored_label(colors.text_secondary, "MIT License");
                         ui.add_space(8.0);
                         ui.label("Copyright (c) 2025 morefunfun11");
                         ui.label("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:");
