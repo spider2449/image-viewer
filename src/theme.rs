@@ -33,27 +33,27 @@ pub struct ThemeColors {
 pub fn palette(theme: Theme) -> ThemeColors {
     match theme {
         Theme::Dark => ThemeColors {
-            bg_dark: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-            panel_bg: Color32::from_rgb(0x22, 0x22, 0x22),
-            card_bg: Color32::from_rgb(0x2a, 0x2a, 0x2a),
-            hover_bg: Color32::from_rgb(0x35, 0x35, 0x35),
-            accent: Color32::from_rgb(0x4a, 0x9e, 0xff),
-            selected_bg: Color32::from_rgb(0x2d, 0x5a, 0x8e),
-            text_primary: Color32::from_rgb(0xe0, 0xe0, 0xe0),
-            text_secondary: Color32::from_rgb(0x88, 0x88, 0x88),
+            bg_dark: Color32::from_rgb(0x14, 0x14, 0x14),
+            panel_bg: Color32::from_rgba_unmultiplied(0x1c, 0x1c, 0x1c, 235),
+            card_bg: Color32::from_rgba_unmultiplied(0x24, 0x24, 0x24, 235),
+            hover_bg: Color32::from_rgb(0x2e, 0x2e, 0x2e),
+            accent: Color32::from_rgb(0x5a, 0xa9, 0xff),
+            selected_bg: Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40),
+            text_primary: Color32::from_rgb(0xe8, 0xe8, 0xe8),
+            text_secondary: Color32::from_rgb(0x8f, 0x8f, 0x8f),
             border: Color32::from_rgb(0x3a, 0x3a, 0x3a),
             danger: Color32::from_rgb(0xe7, 0x4c, 0x3c),
         },
         Theme::Light => ThemeColors {
             bg_dark: Color32::from_rgb(0xff, 0xff, 0xff),
-            panel_bg: Color32::from_rgb(0xf5, 0xf5, 0xf5),
-            card_bg: Color32::from_rgb(0xe8, 0xe8, 0xe8),
-            hover_bg: Color32::from_rgb(0xdc, 0xdc, 0xdc),
-            accent: Color32::from_rgb(0x1a, 0x6d, 0xd6),
-            selected_bg: Color32::from_rgb(0xa8, 0xc8, 0xf0),
+            panel_bg: Color32::from_rgb(0xf7, 0xf7, 0xf8),
+            card_bg: Color32::from_rgb(0xee, 0xf0, 0xf2),
+            hover_bg: Color32::from_rgb(0xe2, 0xe5, 0xe9),
+            accent: Color32::from_rgb(0x1f, 0x6f, 0xe5),
+            selected_bg: Color32::from_rgb(0xcf, 0xe0, 0xfa),
             text_primary: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-            text_secondary: Color32::from_rgb(0x66, 0x66, 0x66),
-            border: Color32::from_rgb(0xcc, 0xcc, 0xcc),
+            text_secondary: Color32::from_rgb(0x5a, 0x5a, 0x5a),
+            border: Color32::from_rgb(0xd6, 0xd8, 0xdb),
             danger: Color32::from_rgb(0xc0, 0x39, 0x2b),
         },
     }
@@ -72,13 +72,32 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
     } else {
         Visuals::light()
     };
+
+    let window_shadow = if theme == Theme::Dark {
+        egui::epaint::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(120),
+        }
+    } else {
+        egui::epaint::Shadow {
+            offset: [0, 4],
+            blur: 10,
+            spread: 0,
+            color: Color32::from_black_alpha(40),
+        }
+    };
+
     Visuals {
         dark_mode: theme == Theme::Dark,
         override_text_color: Some(c.text_primary),
-        window_corner_radius: CornerRadius::same(6),
+        window_corner_radius: CornerRadius::same(10),
         window_stroke: Stroke::new(1.0, c.border),
         window_fill: c.panel_bg,
         panel_fill: c.panel_bg,
+        window_shadow,
+        popup_shadow: window_shadow,
         faint_bg_color: c.bg_dark,
         extreme_bg_color: c.bg_dark,
         code_bg_color: c.card_bg,
@@ -94,7 +113,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.card_bg,
                 weak_bg_fill: c.panel_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_secondary),
                 expansion: 0.0,
             },
@@ -102,7 +121,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.panel_bg,
                 weak_bg_fill: c.card_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_primary),
                 expansion: 0.0,
             },
@@ -110,15 +129,15 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.hover_bg,
                 weak_bg_fill: c.hover_bg,
                 bg_stroke: Stroke::new(1.0, c.accent),
-                corner_radius: CornerRadius::same(4),
-                fg_stroke: Stroke::new(1.5, c.accent),
-                expansion: 1.0,
+                corner_radius: CornerRadius::same(8),
+                fg_stroke: Stroke::new(1.2, c.accent),
+                expansion: 0.5,
             },
             active: egui::style::WidgetVisuals {
                 bg_fill: c.selected_bg,
                 weak_bg_fill: c.selected_bg,
                 bg_stroke: Stroke::new(1.0, c.accent),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(2.0, c.accent),
                 expansion: 1.0,
             },
@@ -126,7 +145,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.card_bg,
                 weak_bg_fill: c.card_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_primary),
                 expansion: 0.0,
             },
@@ -139,14 +158,14 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
 pub fn theme_style() -> Style {
     Style {
         spacing: egui::style::Spacing {
-            item_spacing: Vec2::new(8.0, 8.0),
-            button_padding: Vec2::new(8.0, 4.0),
+            item_spacing: Vec2::new(10.0, 10.0),
+            button_padding: Vec2::new(10.0, 6.0),
             indent: 16.0,
             scroll: egui::style::ScrollStyle {
                 bar_width: 6.0,
                 ..Default::default()
             },
-            window_margin: Margin::same(12),
+            window_margin: Margin::same(14),
             ..Default::default()
         },
         interaction: egui::style::Interaction {
@@ -163,18 +182,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_palette_dark_matches_old_constants() {
+    fn test_palette_dark_matches_new_constants() {
         let c = palette(Theme::Dark);
-        assert_eq!(c.bg_dark, Color32::from_rgb(0x1a, 0x1a, 0x1a));
-        assert_eq!(c.panel_bg, Color32::from_rgb(0x22, 0x22, 0x22));
-        assert_eq!(c.card_bg, Color32::from_rgb(0x2a, 0x2a, 0x2a));
-        assert_eq!(c.hover_bg, Color32::from_rgb(0x35, 0x35, 0x35));
-        assert_eq!(c.accent, Color32::from_rgb(0x4a, 0x9e, 0xff));
-        assert_eq!(c.selected_bg, Color32::from_rgb(0x2d, 0x5a, 0x8e));
-        assert_eq!(c.text_primary, Color32::from_rgb(0xe0, 0xe0, 0xe0));
-        assert_eq!(c.text_secondary, Color32::from_rgb(0x88, 0x88, 0x88));
+        assert_eq!(c.bg_dark, Color32::from_rgb(0x14, 0x14, 0x14));
+        assert_eq!(c.panel_bg, Color32::from_rgba_unmultiplied(0x1c, 0x1c, 0x1c, 235));
+        assert_eq!(c.card_bg, Color32::from_rgba_unmultiplied(0x24, 0x24, 0x24, 235));
+        assert_eq!(c.hover_bg, Color32::from_rgb(0x2e, 0x2e, 0x2e));
+        assert_eq!(c.accent, Color32::from_rgb(0x5a, 0xa9, 0xff));
+        assert_eq!(c.selected_bg, Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40));
+        assert_eq!(c.text_primary, Color32::from_rgb(0xe8, 0xe8, 0xe8));
+        assert_eq!(c.text_secondary, Color32::from_rgb(0x8f, 0x8f, 0x8f));
         assert_eq!(c.border, Color32::from_rgb(0x3a, 0x3a, 0x3a));
         assert_eq!(c.danger, Color32::from_rgb(0xe7, 0x4c, 0x3c));
+    }
+
+    #[test]
+    fn test_palette_light_matches_new_constants() {
+        let c = palette(Theme::Light);
+        assert_eq!(c.bg_dark, Color32::from_rgb(0xff, 0xff, 0xff));
+        assert_eq!(c.panel_bg, Color32::from_rgb(0xf7, 0xf7, 0xf8));
+        assert_eq!(c.card_bg, Color32::from_rgb(0xee, 0xf0, 0xf2));
+        assert_eq!(c.hover_bg, Color32::from_rgb(0xe2, 0xe5, 0xe9));
+        assert_eq!(c.accent, Color32::from_rgb(0x1f, 0x6f, 0xe5));
+        assert_eq!(c.selected_bg, Color32::from_rgb(0xcf, 0xe0, 0xfa));
+        assert_eq!(c.text_primary, Color32::from_rgb(0x1a, 0x1a, 0x1a));
+        assert_eq!(c.text_secondary, Color32::from_rgb(0x5a, 0x5a, 0x5a));
+        assert_eq!(c.border, Color32::from_rgb(0xd6, 0xd8, 0xdb));
+        assert_eq!(c.danger, Color32::from_rgb(0xc0, 0x39, 0x2b));
     }
 
     #[test]
