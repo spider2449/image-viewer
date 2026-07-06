@@ -33,27 +33,27 @@ pub struct ThemeColors {
 pub fn palette(theme: Theme) -> ThemeColors {
     match theme {
         Theme::Dark => ThemeColors {
-            bg_dark: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-            panel_bg: Color32::from_rgb(0x22, 0x22, 0x22),
-            card_bg: Color32::from_rgb(0x2a, 0x2a, 0x2a),
-            hover_bg: Color32::from_rgb(0x35, 0x35, 0x35),
-            accent: Color32::from_rgb(0x4a, 0x9e, 0xff),
-            selected_bg: Color32::from_rgb(0x2d, 0x5a, 0x8e),
-            text_primary: Color32::from_rgb(0xe0, 0xe0, 0xe0),
-            text_secondary: Color32::from_rgb(0x88, 0x88, 0x88),
+            bg_dark: Color32::from_rgb(0x14, 0x14, 0x14),
+            panel_bg: Color32::from_rgb(0x1c, 0x1c, 0x1c),
+            card_bg: Color32::from_rgb(0x24, 0x24, 0x24),
+            hover_bg: Color32::from_rgb(0x2e, 0x2e, 0x2e),
+            accent: Color32::from_rgb(0x5a, 0xa9, 0xff),
+            selected_bg: Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40),
+            text_primary: Color32::from_rgb(0xe8, 0xe8, 0xe8),
+            text_secondary: Color32::from_rgb(0x8f, 0x8f, 0x8f),
             border: Color32::from_rgb(0x3a, 0x3a, 0x3a),
             danger: Color32::from_rgb(0xe7, 0x4c, 0x3c),
         },
         Theme::Light => ThemeColors {
             bg_dark: Color32::from_rgb(0xff, 0xff, 0xff),
-            panel_bg: Color32::from_rgb(0xf5, 0xf5, 0xf5),
-            card_bg: Color32::from_rgb(0xe8, 0xe8, 0xe8),
-            hover_bg: Color32::from_rgb(0xdc, 0xdc, 0xdc),
-            accent: Color32::from_rgb(0x1a, 0x6d, 0xd6),
-            selected_bg: Color32::from_rgb(0xa8, 0xc8, 0xf0),
+            panel_bg: Color32::from_rgb(0xf7, 0xf7, 0xf8),
+            card_bg: Color32::from_rgb(0xee, 0xf0, 0xf2),
+            hover_bg: Color32::from_rgb(0xe2, 0xe5, 0xe9),
+            accent: Color32::from_rgb(0x1f, 0x6f, 0xe5),
+            selected_bg: Color32::from_rgb(0xcf, 0xe0, 0xfa),
             text_primary: Color32::from_rgb(0x1a, 0x1a, 0x1a),
-            text_secondary: Color32::from_rgb(0x66, 0x66, 0x66),
-            border: Color32::from_rgb(0xcc, 0xcc, 0xcc),
+            text_secondary: Color32::from_rgb(0x5a, 0x5a, 0x5a),
+            border: Color32::from_rgb(0xd6, 0xd8, 0xdb),
             danger: Color32::from_rgb(0xc0, 0x39, 0x2b),
         },
     }
@@ -163,18 +163,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_palette_dark_matches_old_constants() {
+    fn test_palette_dark_matches_new_constants() {
         let c = palette(Theme::Dark);
-        assert_eq!(c.bg_dark, Color32::from_rgb(0x1a, 0x1a, 0x1a));
-        assert_eq!(c.panel_bg, Color32::from_rgb(0x22, 0x22, 0x22));
-        assert_eq!(c.card_bg, Color32::from_rgb(0x2a, 0x2a, 0x2a));
-        assert_eq!(c.hover_bg, Color32::from_rgb(0x35, 0x35, 0x35));
-        assert_eq!(c.accent, Color32::from_rgb(0x4a, 0x9e, 0xff));
-        assert_eq!(c.selected_bg, Color32::from_rgb(0x2d, 0x5a, 0x8e));
-        assert_eq!(c.text_primary, Color32::from_rgb(0xe0, 0xe0, 0xe0));
-        assert_eq!(c.text_secondary, Color32::from_rgb(0x88, 0x88, 0x88));
+        assert_eq!(c.bg_dark, Color32::from_rgb(0x14, 0x14, 0x14));
+        assert_eq!(c.panel_bg, Color32::from_rgb(0x1c, 0x1c, 0x1c));
+        assert_eq!(c.card_bg, Color32::from_rgb(0x24, 0x24, 0x24));
+        assert_eq!(c.hover_bg, Color32::from_rgb(0x2e, 0x2e, 0x2e));
+        assert_eq!(c.accent, Color32::from_rgb(0x5a, 0xa9, 0xff));
+        assert_eq!(c.selected_bg, Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40));
+        assert_eq!(c.text_primary, Color32::from_rgb(0xe8, 0xe8, 0xe8));
+        assert_eq!(c.text_secondary, Color32::from_rgb(0x8f, 0x8f, 0x8f));
         assert_eq!(c.border, Color32::from_rgb(0x3a, 0x3a, 0x3a));
         assert_eq!(c.danger, Color32::from_rgb(0xe7, 0x4c, 0x3c));
+    }
+
+    #[test]
+    fn test_palette_light_matches_new_constants() {
+        let c = palette(Theme::Light);
+        assert_eq!(c.bg_dark, Color32::from_rgb(0xff, 0xff, 0xff));
+        assert_eq!(c.panel_bg, Color32::from_rgb(0xf7, 0xf7, 0xf8));
+        assert_eq!(c.card_bg, Color32::from_rgb(0xee, 0xf0, 0xf2));
+        assert_eq!(c.hover_bg, Color32::from_rgb(0xe2, 0xe5, 0xe9));
+        assert_eq!(c.accent, Color32::from_rgb(0x1f, 0x6f, 0xe5));
+        assert_eq!(c.selected_bg, Color32::from_rgb(0xcf, 0xe0, 0xfa));
+        assert_eq!(c.text_primary, Color32::from_rgb(0x1a, 0x1a, 0x1a));
+        assert_eq!(c.text_secondary, Color32::from_rgb(0x5a, 0x5a, 0x5a));
+        assert_eq!(c.border, Color32::from_rgb(0xd6, 0xd8, 0xdb));
+        assert_eq!(c.danger, Color32::from_rgb(0xc0, 0x39, 0x2b));
     }
 
     #[test]
