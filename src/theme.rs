@@ -135,6 +135,22 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
     }
 }
 
+// ── Apply a theme to the egui context ──────────────────────
+// `Context::set_style`/`set_visuals` only write to whichever theme slot
+// `ctx.theme()` currently resolves to (which defaults to following the OS
+// and may not match `theme` yet). Pin the preference and target the slot
+// explicitly so both the style and visuals always land on the right theme.
+pub fn apply_theme(ctx: &egui::Context, theme: Theme) {
+    let egui_theme = if theme == Theme::Dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    ctx.set_theme(egui_theme);
+    ctx.set_style_of(egui_theme, theme_style());
+    ctx.set_visuals_of(egui_theme, theme_visuals(theme));
+}
+
 // ── Build the global Style ─────────────────────────────────
 pub fn theme_style() -> Style {
     Style {
