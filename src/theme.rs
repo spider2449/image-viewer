@@ -139,14 +139,14 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
 pub fn theme_style() -> Style {
     Style {
         spacing: egui::style::Spacing {
-            item_spacing: Vec2::new(8.0, 8.0),
-            button_padding: Vec2::new(8.0, 4.0),
+            item_spacing: Vec2::new(10.0, 10.0),
+            button_padding: Vec2::new(10.0, 6.0),
             indent: 16.0,
             scroll: egui::style::ScrollStyle {
                 bar_width: 6.0,
                 ..Default::default()
             },
-            window_margin: Margin::same(12),
+            window_margin: Margin::same(14),
             ..Default::default()
         },
         interaction: egui::style::Interaction {
