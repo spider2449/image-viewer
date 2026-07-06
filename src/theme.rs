@@ -72,13 +72,32 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
     } else {
         Visuals::light()
     };
+
+    let window_shadow = if theme == Theme::Dark {
+        egui::epaint::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(120),
+        }
+    } else {
+        egui::epaint::Shadow {
+            offset: [0, 4],
+            blur: 10,
+            spread: 0,
+            color: Color32::from_black_alpha(40),
+        }
+    };
+
     Visuals {
         dark_mode: theme == Theme::Dark,
         override_text_color: Some(c.text_primary),
-        window_corner_radius: CornerRadius::same(6),
+        window_corner_radius: CornerRadius::same(10),
         window_stroke: Stroke::new(1.0, c.border),
         window_fill: c.panel_bg,
         panel_fill: c.panel_bg,
+        window_shadow,
+        popup_shadow: window_shadow,
         faint_bg_color: c.bg_dark,
         extreme_bg_color: c.bg_dark,
         code_bg_color: c.card_bg,
@@ -94,7 +113,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.card_bg,
                 weak_bg_fill: c.panel_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_secondary),
                 expansion: 0.0,
             },
@@ -102,7 +121,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.panel_bg,
                 weak_bg_fill: c.card_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_primary),
                 expansion: 0.0,
             },
@@ -110,15 +129,15 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.hover_bg,
                 weak_bg_fill: c.hover_bg,
                 bg_stroke: Stroke::new(1.0, c.accent),
-                corner_radius: CornerRadius::same(4),
-                fg_stroke: Stroke::new(1.5, c.accent),
-                expansion: 1.0,
+                corner_radius: CornerRadius::same(8),
+                fg_stroke: Stroke::new(1.2, c.accent),
+                expansion: 0.5,
             },
             active: egui::style::WidgetVisuals {
                 bg_fill: c.selected_bg,
                 weak_bg_fill: c.selected_bg,
                 bg_stroke: Stroke::new(1.0, c.accent),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(2.0, c.accent),
                 expansion: 1.0,
             },
@@ -126,7 +145,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
                 bg_fill: c.card_bg,
                 weak_bg_fill: c.card_bg,
                 bg_stroke: Stroke::new(1.0, c.border),
-                corner_radius: CornerRadius::same(4),
+                corner_radius: CornerRadius::same(8),
                 fg_stroke: Stroke::new(1.0, c.text_primary),
                 expansion: 0.0,
             },
