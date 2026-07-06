@@ -34,8 +34,8 @@ pub fn palette(theme: Theme) -> ThemeColors {
     match theme {
         Theme::Dark => ThemeColors {
             bg_dark: Color32::from_rgb(0x14, 0x14, 0x14),
-            panel_bg: Color32::from_rgb(0x1c, 0x1c, 0x1c),
-            card_bg: Color32::from_rgb(0x24, 0x24, 0x24),
+            panel_bg: Color32::from_rgba_unmultiplied(0x1c, 0x1c, 0x1c, 235),
+            card_bg: Color32::from_rgba_unmultiplied(0x24, 0x24, 0x24, 235),
             hover_bg: Color32::from_rgb(0x2e, 0x2e, 0x2e),
             accent: Color32::from_rgb(0x5a, 0xa9, 0xff),
             selected_bg: Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40),
@@ -185,8 +185,8 @@ mod tests {
     fn test_palette_dark_matches_new_constants() {
         let c = palette(Theme::Dark);
         assert_eq!(c.bg_dark, Color32::from_rgb(0x14, 0x14, 0x14));
-        assert_eq!(c.panel_bg, Color32::from_rgb(0x1c, 0x1c, 0x1c));
-        assert_eq!(c.card_bg, Color32::from_rgb(0x24, 0x24, 0x24));
+        assert_eq!(c.panel_bg, Color32::from_rgba_unmultiplied(0x1c, 0x1c, 0x1c, 235));
+        assert_eq!(c.card_bg, Color32::from_rgba_unmultiplied(0x24, 0x24, 0x24, 235));
         assert_eq!(c.hover_bg, Color32::from_rgb(0x2e, 0x2e, 0x2e));
         assert_eq!(c.accent, Color32::from_rgb(0x5a, 0xa9, 0xff));
         assert_eq!(c.selected_bg, Color32::from_rgba_unmultiplied(0x5a, 0xa9, 0xff, 0x40));
