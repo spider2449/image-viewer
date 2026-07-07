@@ -38,10 +38,17 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         ui.separator();
         ui.label("Size:");
         let mut ts = app.config.thumb_size;
-        if ui.add(egui::Slider::new(&mut ts, 60.0..=400.0).text("px")).changed() {
-            app.config.thumb_size = ts;
-            size_changed = true;
-        }
+        ui.scope(|ui| {
+            ui.spacing_mut().slider_rail_height = 6.0;
+            ui.spacing_mut().interact_size.y = 22.0;
+            if ui
+                .add(egui::Slider::new(&mut ts, 60.0..=400.0).text("px").trailing_fill(true))
+                .changed()
+            {
+                app.config.thumb_size = ts;
+                size_changed = true;
+            }
+        });
         let mut sort_changed = false;
         ui.separator();
         egui::ComboBox::new("sort_by", "")

@@ -47,8 +47,7 @@ impl App {
         cc.egui_ctx.set_fonts(fonts);
         let config = Config::load();
         let theme = crate::theme::Theme::from_str(&config.theme);
-        cc.egui_ctx.set_style(crate::theme::theme_style());
-        cc.egui_ctx.set_visuals(crate::theme::theme_visuals(theme));
+        crate::theme::apply_theme(&cc.egui_ctx, theme);
 
         let cache_dir = Self::cache_dir();
         let disk_cache = DiskCache::new(cache_dir.join("thumbnails"));
@@ -256,9 +255,10 @@ impl eframe::App for App {
                         if ui.button(format!("Switch to {next_theme} Theme")).clicked() {
                             self.config.theme = next_theme.to_lowercase();
                             self.config.save();
-                            ctx.set_visuals(crate::theme::theme_visuals(
+                            crate::theme::apply_theme(
+                                ctx,
                                 crate::theme::Theme::from_str(&self.config.theme),
-                            ));
+                            );
                             ui.close_menu();
                         }
                     });
