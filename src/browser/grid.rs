@@ -265,11 +265,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             rect.min + Vec2::new(4.0, app.config.thumb_size),
                             Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
                         );
-                        let display_name = if name.len() > 18 {
-                            format!("{}…", &name[..17])
-                        } else {
-                            name
-                        };
+                        let display_name = truncate_name(&name, 18);
                         ui.painter().text(
                             label_rect.left_center(),
                             egui::Align2::LEFT_CENTER,
@@ -573,9 +569,40 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+fn truncate_name(name: &str, max_chars: usize) -> String {
+    if name.chars().count() > max_chars {
+        let truncated: String = name.chars().take(max_chars - 1).collect();
+        format!("{truncated}…")
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_size;
+    use super::{format_size, truncate_name};
+
+    #[test]
+    fn test_truncate_name_short_unchanged() {
+        assert_eq!(truncate_name("short.png", 18), "short.png");
+    }
+
+    #[test]
+    fn test_truncate_name_long_ascii() {
+        let name = "a_very_long_filename_indeed";
+        let t = truncate_name(name, 18);
+        assert_eq!(t.chars().count(), 18); // 17 chars + ellipsis
+        assert!(t.ends_with('…'));
+    }
+
+    #[test]
+    fn test_truncate_name_cjk_no_panic() {
+        // 20 CJK chars = 60 bytes; byte-slicing at 17 would panic
+        let name = "测试文件名称非常长的图片文件示例一二三四";
+        let t = truncate_name(name, 18);
+        assert!(t.ends_with('…'));
+        assert_eq!(t.chars().count(), 18);
+    }
 
     #[test]
     fn test_format_size_bytes() {
