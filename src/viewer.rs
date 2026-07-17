@@ -98,6 +98,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                     if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
                         app.editor_state.visible = !app.editor_state.visible;
+                        if app.editor_state.visible && app.editor_state.current_image.is_none() {
+                            app.editor_state.load_image(&path);
+                        }
                     }
                     // Fullscreen
                     if ui.button("\u{26F6} FS").clicked() {

@@ -163,7 +163,11 @@ impl App {
         if index < self.image_files.len() {
             self.selected_image_index = index;
             if let Some(p) = self.image_files.get(index) {
-                self.editor_state.load_image(p);
+                if self.editor_state.visible {
+                    self.editor_state.load_image(p);
+                } else {
+                    self.editor_state.current_image = None;
+                }
                 self.exif_state.parse(p);
             }
             self.mode = Mode::Viewer;
@@ -175,7 +179,11 @@ impl App {
             self.selected_image_index += 1;
             self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
-                self.editor_state.load_image(p);
+                if self.editor_state.visible {
+                    self.editor_state.load_image(p);
+                } else {
+                    self.editor_state.current_image = None;
+                }
                 self.exif_state.parse(p);
             }
         }
@@ -186,7 +194,11 @@ impl App {
             self.selected_image_index -= 1;
             self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
-                self.editor_state.load_image(p);
+                if self.editor_state.visible {
+                    self.editor_state.load_image(p);
+                } else {
+                    self.editor_state.current_image = None;
+                }
                 self.exif_state.parse(p);
             }
         }

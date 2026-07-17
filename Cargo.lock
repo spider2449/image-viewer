@@ -1607,7 +1607,7 @@ dependencies = [
 
 [[package]]
 name = "image-viewer"
-version = "0.1.42"
+version = "0.1.45"
 dependencies = [
  "dirs-next",
  "eframe",
