@@ -56,6 +56,7 @@ pub fn batch_resize(
     files: &[PathBuf],
     width: u32,
     height: u32,
+    lock_aspect: bool,
 ) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     for path in files {
@@ -63,7 +64,11 @@ pub fn batch_resize(
             Ok(i) => i,
             Err(e) => { errors.push(format!("{}: {e}", path.display())); continue; }
         };
-        let resized = img.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
+        let resized = if lock_aspect {
+            img.resize(width, height, image::imageops::FilterType::Lanczos3)
+        } else {
+            img.resize_exact(width, height, image::imageops::FilterType::Lanczos3)
+        };
         let ext = path.extension()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
@@ -156,7 +161,7 @@ mod tests {
         let src = dir.join("test.png");
         image::DynamicImage::new_rgba8(100, 200).save(&src).unwrap();
 
-        let result = batch_resize(&[src.clone()], 50, 100);
+        let result = batch_resize(&[src.clone()], 50, 100, false);
         assert!(result.is_ok());
 
         let img = image::open(&src).unwrap();
@@ -171,9 +176,24 @@ mod tests {
         let src = dir.join("test.jpg");
         image::DynamicImage::new_rgba8(100, 200).save(&src).unwrap();
 
-        let result = batch_resize(&[src.clone()], 25, 50);
+        let result = batch_resize(&[src.clone()], 25, 50, false);
         assert!(result.is_ok());
 
+        let img = image::open(&src).unwrap();
+        assert_eq!(img.dimensions(), (25, 50));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_batch_resize_lock_aspect_fits_within_box() {
+        let dir = std::env::temp_dir().join("batch_test_resize_lock");
+        let _ = std::fs::create_dir_all(&dir);
+        let src = dir.join("test.png");
+        image::DynamicImage::new_rgba8(100, 200).save(&src).unwrap();
+
+        // 1:2 image into a 50x50 box with aspect locked -> 25x50
+        let result = batch_resize(&[src.clone()], 50, 50, true);
+        assert!(result.is_ok());
         let img = image::open(&src).unwrap();
         assert_eq!(img.dimensions(), (25, 50));
         let _ = std::fs::remove_dir_all(&dir);

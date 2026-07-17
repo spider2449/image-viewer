@@ -146,11 +146,21 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 // Resize section
                 ui.label(egui::RichText::new("Resize").strong().color(colors.accent));
+                let aspect = app.editor_state.current_image.as_ref().map(|img| {
+                    let (iw, ih) = img.dimensions();
+                    (iw.max(1), ih.max(1))
+                });
                 ui.horizontal(|ui| {
                     ui.colored_label(colors.text_secondary, "W:");
                     let mut w = app.editor_state.resize_width as f32;
                     if ui.add(egui::DragValue::new(&mut w).range(1..=16384)).changed() {
                         app.editor_state.resize_width = w as u32;
+                        if app.editor_state.resize_lock_aspect {
+                            if let Some((iw, ih)) = aspect {
+                                app.editor_state.resize_height =
+                                    ((w * ih as f32 / iw as f32).round() as u32).max(1);
+                            }
+                        }
                     }
                 });
                 ui.horizontal(|ui| {
@@ -158,6 +168,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     let mut h = app.editor_state.resize_height as f32;
                     if ui.add(egui::DragValue::new(&mut h).range(1..=16384)).changed() {
                         app.editor_state.resize_height = h as u32;
+                        if app.editor_state.resize_lock_aspect {
+                            if let Some((iw, ih)) = aspect {
+                                app.editor_state.resize_width =
+                                    ((h * iw as f32 / ih as f32).round() as u32).max(1);
+                            }
+                        }
                     }
                 });
                 ui.checkbox(&mut app.editor_state.resize_lock_aspect, "Lock aspect ratio");

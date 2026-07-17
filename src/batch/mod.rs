@@ -219,7 +219,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.batch_state.running = true;
                         let w = app.batch_state.resize_width;
                         let h = app.batch_state.resize_height;
-                        let result = operations::batch_resize(&selected, w, h);
+                        let result = operations::batch_resize(&selected, w, h, app.batch_state.resize_lock_aspect);
                         app.batch_state.log.clear();
                         if let Err(errs) = result {
                             for e in errs {
