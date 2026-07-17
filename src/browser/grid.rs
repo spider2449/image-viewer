@@ -476,14 +476,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 let date_str = meta.as_ref()
                     .and_then(|m| m.modified().ok())
                     .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|dt| {
-                        let secs = dt.as_secs();
-                        let days = secs / 86400;
-                        let time = secs % 86400;
-                        let h = time / 3600;
-                        let min = (time % 3600) / 60;
-                        format!("{days}d {h:02}:{min:02}")
-                    })
+                    .map(|dt| format_timestamp(dt.as_secs()))
                     .unwrap_or_else(|| "-".to_string());
                 ui.painter().text(
                     egui::pos2(x + widths.date - 4.0, cy),
@@ -549,6 +542,27 @@ fn drag_handle(
     x
 }
 
+// Civil-from-days algorithm (Howard Hinnant), UTC.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+fn format_timestamp(secs_since_epoch: u64) -> String {
+    let days = (secs_since_epoch / 86_400) as i64;
+    let time = secs_since_epoch % 86_400;
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", time / 3600, (time % 3600) / 60)
+}
+
 fn format_size(bytes: u64) -> String {
     if bytes >= 1024 * 1024 * 1024 {
         format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
@@ -572,7 +586,18 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_size, truncate_name};
+    use super::{format_size, format_timestamp, truncate_name};
+
+    #[test]
+    fn test_format_timestamp_epoch() {
+        assert_eq!(format_timestamp(0), "1970-01-01 00:00");
+    }
+
+    #[test]
+    fn test_format_timestamp_known_date() {
+        // 2026-07-17 12:34:56 UTC
+        assert_eq!(format_timestamp(1_784_291_696), "2026-07-17 12:34");
+    }
 
     #[test]
     fn test_truncate_name_short_unchanged() {
