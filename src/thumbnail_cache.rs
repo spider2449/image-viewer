@@ -1,10 +1,10 @@
 use crate::disk_cache::DiskCache;
 use egui::ColorImage;
 use lru::LruCache;
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -33,11 +33,10 @@ pub struct ThumbnailResult {
 
 pub struct ThumbnailCache {
     cache: Arc<Mutex<LruCache<PathBuf, (ColorImage, u32, u32)>>>,
-    pending: Arc<Mutex<Vec<PathBuf>>>,
+    pending: Arc<Mutex<HashSet<PathBuf>>>,
     sender: Sender<ThumbnailRequest>,
     receiver: Receiver<ThumbnailResult>,
     disk_cache: Option<Arc<DiskCache>>,
-    shutdown: Arc<AtomicBool>,
 }
 
 impl ThumbnailCache {
@@ -49,8 +48,7 @@ impl ThumbnailCache {
         let cache = Arc::new(Mutex::new(
             LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(256).unwrap())),
         ));
-        let pending: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-        let shutdown = Arc::new(AtomicBool::new(false));
+        let pending: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
 
         let disk_cache = disk_cache.map(Arc::new);
         let req_rx = Arc::new(Mutex::new(req_rx));
@@ -59,28 +57,14 @@ impl ThumbnailCache {
         if let Some(ref dc) = disk_cache {
             let dc = dc.clone();
             let store_rx = Arc::new(Mutex::new(store_rx));
-            let sd = shutdown.clone();
-            thread::spawn(move || {
-                loop {
-                    if sd.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let req = {
-                        let rx = store_rx.lock().unwrap();
-                        match rx.try_recv() {
-                            Ok(r) => Some(r),
-                            Err(TryRecvError::Empty) => None,
-                            Err(TryRecvError::Disconnected) => break,
-                        }
-                    };
-                    match req {
-                        Some(req) => {
-                            dc.store(&req.path, req.max_size, &req.image);
-                        }
-                        None => {
-                            thread::sleep(Duration::from_millis(10));
-                        }
-                    }
+            thread::spawn(move || loop {
+                let req = {
+                    let rx = store_rx.lock().unwrap();
+                    rx.recv()
+                };
+                match req {
+                    Ok(req) => dc.store(&req.path, req.max_size, &req.image),
+                    Err(_) => break, // channel disconnected: all senders gone
                 }
             });
         }
@@ -92,89 +76,75 @@ impl ThumbnailCache {
             let req_rx = req_rx.clone();
             let dc = disk_cache.clone();
             let store_tx = store_tx.clone();
-            let sd = shutdown.clone();
 
-            thread::spawn(move || {
-                loop {
-                    if sd.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let req = {
-                        let rx = req_rx.lock().unwrap();
-                        match rx.try_recv() {
-                            Ok(r) => Some(r),
-                            Err(TryRecvError::Empty) => None,
-                            Err(TryRecvError::Disconnected) => break,
+            thread::spawn(move || loop {
+                let req = {
+                    let rx = req_rx.lock().unwrap();
+                    rx.recv()
+                };
+                let Ok(req) = req else { break };
+                let start = Instant::now();
+
+                // Check disk cache first
+                let from_disk = dc.as_ref()
+                    .and_then(|d| d.lookup(&req.path, req.max_size));
+
+                let result = match from_disk {
+                    Some(ci) => {
+                        let w = ci.size[0] as u32;
+                        let h = ci.size[1] as u32;
+                        {
+                            let mut c = cache_clone.lock().unwrap();
+                            c.put(req.path.clone(), (ci.clone(), w, h));
                         }
-                    };
-                    match req {
-                        Some(req) => {
-                            let start = Instant::now();
-
-                            // Check disk cache first
-                            let from_disk = dc.as_ref()
-                                .and_then(|d| d.lookup(&req.path, req.max_size));
-
-                            let result = match from_disk {
-                                Some(ci) => {
-                                    let w = ci.size[0] as u32;
-                                    let h = ci.size[1] as u32;
-                                    {
-                                        let mut c = cache_clone.lock().unwrap();
-                                        c.put(req.path.clone(), (ci.clone(), w, h));
-                                    }
-                                    ThumbnailResult {
-                                        path: req.path,
-                                        image: Some(ci),
-                                        full_width: w,
-                                        full_height: h,
-                                        load_time: start.elapsed(),
-                                    }
-                                }
-                                None => {
-                                    let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
-                                    match result {
-                                        Ok((ci, w, h)) => {
-                                            // Enqueue disk write — non-blocking, store thread handles it
-                                            store_tx.send(StoreRequest {
-                                                path: req.path.clone(),
-                                                max_size: req.max_size,
-                                                image: ci.clone(),
-                                            }).ok();
-                                            {
-                                                let mut c = cache_clone.lock().unwrap();
-                                                c.put(req.path.clone(), (ci.clone(), w, h));
-                                            }
-                                            ThumbnailResult {
-                                                path: req.path,
-                                                image: Some(ci),
-                                                full_width: w,
-                                                full_height: h,
-                                                load_time: start.elapsed(),
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("[thumbnail] decode failed for {:?}: {e}", req.path);
-                                            ThumbnailResult {
-                                                path: req.path,
-                                                image: None,
-                                                full_width: 0,
-                                                full_height: 0,
-                                                load_time: start.elapsed(),
-                                            }
-                                        }
-                                    }
-                                }
-                            };
-                            res_tx.send(result).ok();
-                        }
-                        None => {
-                            thread::sleep(Duration::from_millis(10));
+                        ThumbnailResult {
+                            path: req.path,
+                            image: Some(ci),
+                            full_width: w,
+                            full_height: h,
+                            load_time: start.elapsed(),
                         }
                     }
-                }
+                    None => {
+                        let result = crate::image_loader::load_thumbnail(&req.path, req.max_size);
+                        match result {
+                            Ok((ci, w, h)) => {
+                                // Enqueue disk write — non-blocking, store thread handles it
+                                store_tx.send(StoreRequest {
+                                    path: req.path.clone(),
+                                    max_size: req.max_size,
+                                    image: ci.clone(),
+                                }).ok();
+                                {
+                                    let mut c = cache_clone.lock().unwrap();
+                                    c.put(req.path.clone(), (ci.clone(), w, h));
+                                }
+                                ThumbnailResult {
+                                    path: req.path,
+                                    image: Some(ci),
+                                    full_width: w,
+                                    full_height: h,
+                                    load_time: start.elapsed(),
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[thumbnail] decode failed for {:?}: {e}", req.path);
+                                ThumbnailResult {
+                                    path: req.path,
+                                    image: None,
+                                    full_width: 0,
+                                    full_height: 0,
+                                    load_time: start.elapsed(),
+                                }
+                            }
+                        }
+                    }
+                };
+                res_tx.send(result).ok();
             });
         }
+
+        drop(store_tx);
 
         Self {
             cache,
@@ -182,17 +152,15 @@ impl ThumbnailCache {
             sender: req_tx,
             receiver: res_rx,
             disk_cache,
-            shutdown,
         }
     }
 
     pub fn request(&self, path: PathBuf, max_size: u32) {
         {
             let mut p = self.pending.lock().unwrap();
-            if p.contains(&path) {
-                return;
+            if !p.insert(path.clone()) {
+                return; // already pending
             }
-            p.push(path.clone());
         }
         self.sender.send(ThumbnailRequest { path, max_size }).ok();
     }
@@ -200,8 +168,7 @@ impl ThumbnailCache {
     pub fn poll(&self) -> Option<ThumbnailResult> {
         let result = self.receiver.try_recv().ok();
         if let Some(ref r) = result {
-            let mut p = self.pending.lock().unwrap();
-            p.retain(|x| x != &r.path);
+            self.pending.lock().unwrap().remove(&r.path);
         }
         result
     }
@@ -227,22 +194,16 @@ impl ThumbnailCache {
     }
 }
 
-impl Drop for ThumbnailCache {
-    fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_shutdown_flag_set_on_drop() {
+    fn test_request_dedupes_pending() {
         let cache = ThumbnailCache::new(16, 1, None);
-        let sd = cache.shutdown.clone();
-        drop(cache);
-        assert!(sd.load(Ordering::Relaxed), "shutdown flag must be true after drop");
+        cache.request(PathBuf::from("test.png"), 100);
+        cache.request(PathBuf::from("test.png"), 100);
+        assert_eq!(cache.pending.lock().unwrap().len(), 1);
     }
 
     #[test]
