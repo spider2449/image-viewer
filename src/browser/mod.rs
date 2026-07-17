@@ -4,12 +4,14 @@ pub mod tree;
 
 use crate::app::App;
 use eframe::egui;
+use lru::LruCache;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 pub struct State {
     pub thumbnails: HashMap<PathBuf, Option<egui::ColorImage>>,
-    pub thumb_textures: HashMap<PathBuf, egui::TextureHandle>,
+    pub thumb_textures: LruCache<PathBuf, egui::TextureHandle>,
     pub selected_thumb: Option<usize>,
     pub tree_nodes: Vec<tree::TreeNode>,
     pub expanded_paths: Vec<PathBuf>,
@@ -24,7 +26,7 @@ impl State {
     pub fn new() -> Self {
         Self {
             thumbnails: HashMap::new(),
-            thumb_textures: HashMap::new(),
+            thumb_textures: LruCache::new(NonZeroUsize::new(512).unwrap()),
             selected_thumb: None,
             tree_nodes: Vec::new(),
             expanded_paths: Vec::new(),

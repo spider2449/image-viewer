@@ -213,7 +213,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             } else {
                                 let key = format!("thumb_{}", path.to_string_lossy());
                                 let t = ctx.load_texture(&key, ci.clone(), TextureOptions::LINEAR);
-                                app.browser_state.thumb_textures.insert(path.clone(), t.clone());
+                                app.browser_state.thumb_textures.put(path.clone(), t.clone());
                                 t
                             };
                             let tex_size = tex.size_vec2();
