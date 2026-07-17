@@ -13,7 +13,6 @@ pub struct State {
     pub show_cursor_color: bool,
     pub is_slideshow: bool,
     pub slideshow_timer: f64,
-    pub image_loaded: bool,
     pub load_error: Option<String>,
 }
 
@@ -28,7 +27,6 @@ impl State {
             show_cursor_color: false,
             is_slideshow: false,
             slideshow_timer: 0.0,
-            image_loaded: false,
             load_error: None,
         }
     }
@@ -58,7 +56,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     // Navigation group
                     if ui.button(egui::RichText::new("\u{2190} Browser").color(colors.accent)).clicked() {
                         app.mode = Mode::Browser;
-                        app.viewer_state.image_loaded = false;
                     }
                     ui.separator();
                     if ui.button("\u{25C0} Prev").clicked() {
@@ -161,13 +158,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         if ui.button("\u{25C0}").clicked() {
                             if app.selected_image_index > 0 {
                                 app.selected_image_index -= 1;
-                                app.viewer_state.image_loaded = false;
                             }
                         }
                         if ui.button("\u{25B6}").clicked() {
                             if app.selected_image_index + 1 < app.image_files.len() {
                                 app.selected_image_index += 1;
-                                app.viewer_state.image_loaded = false;
                             }
                         }
                         if ui.button("Fit").clicked() {
@@ -281,7 +276,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 app.viewer_state.slideshow_timer = 0.0;
                 if app.selected_image_index + 1 < app.image_files.len() {
                     app.selected_image_index += 1;
-                    app.viewer_state.image_loaded = false;
                 } else {
                     app.viewer_state.is_slideshow = false;
                 }

@@ -11,14 +11,6 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
         ui.label(crate::theme::styled_icon("\u{25C0}", &colors));
-        if ui.button("Back").clicked() {
-            if let Some(ref cur) = app.current_folder {
-                if let Some(parent) = cur.parent() {
-                    app.current_folder = Some(parent.to_path_buf());
-                    app.scan_folder();
-                }
-            }
-        }
         if ui.button("Up").clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
@@ -500,11 +492,8 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
     let name = cw.name.max(min_w);
     let size = cw.size.max(min_w);
-    let mut date = cw.date.max(min_w);
     let fixed = icon_w + name + gap + size + gap;
-    if fixed + date < available {
-        date += available - fixed - date;
-    }
+    let date = cw.date.max(min_w).max(available - fixed);
     ColumnWidthSet { name, size, date }
 }
 

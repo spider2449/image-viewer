@@ -177,7 +177,6 @@ impl App {
     pub fn next_image(&mut self) {
         if self.selected_image_index + 1 < self.image_files.len() {
             self.selected_image_index += 1;
-            self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
                 if self.editor_state.visible {
                     self.editor_state.load_image(p);
@@ -192,7 +191,6 @@ impl App {
     pub fn prev_image(&mut self) {
         if self.selected_image_index > 0 {
             self.selected_image_index -= 1;
-            self.viewer_state.image_loaded = false;
             if let Some(p) = self.image_files.get(self.selected_image_index) {
                 if self.editor_state.visible {
                     self.editor_state.load_image(p);

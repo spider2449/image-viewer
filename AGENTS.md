@@ -19,7 +19,7 @@ Bump the patch version in `Cargo.toml` before each commit. No tooling — manual
 - **`image` crate 0.25** — decoding; features: png, jpeg, bmp, gif, tiff, webp
 - **Modes:** `Browser` (folder tree left + thumbnail grid center) ↔ `Viewer` (image display + optional right-side editor panel)
 - **Thumbnail cache:** background `std::thread` workers + LRU via `lru` crate. `Arc<Mutex<Receiver>>` pattern with `try_recv` + sleep to avoid blocking.
-- **Config:** JSON at `dirs_next::config_dir()/image-viewer/config.json`
+- **Config:** JSON at `<exe dir>/cache/config.json` (portable, next to the binary)
 - **Fonts:** CJK auto-detected (`msyh.ttc`, `simsun.ttc`, `PingFang.ttc`, `NotoSansCJK`)
 
 ## File layout

@@ -53,7 +53,7 @@ The binary is at `target/release/image-viewer.exe` (Windows) or `target/release/
 
 ## Configuration
 
-Settings are stored as JSON at the platform config directory (`dirs_next::config_dir()/image-viewer/config.json`).
+Settings are stored as JSON in a `cache/` folder next to the executable (portable install).
 
 ## Build
 
