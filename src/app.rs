@@ -105,6 +105,11 @@ impl App {
             Some(f) => f.clone(),
             None => return,
         };
+        let folder_str = folder.to_string_lossy().to_string();
+        if self.config.last_folder.as_deref() != Some(folder_str.as_str()) {
+            self.config.last_folder = Some(folder_str);
+            self.config.save();
+        }
         let mut files: Vec<PathBuf> = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&folder) {
             for entry in entries.flatten() {
