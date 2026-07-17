@@ -1,6 +1,5 @@
 use crate::app::App;
 use eframe::egui::{self, Color32, TextureOptions, Vec2, Stroke, CornerRadius};
-use image::GenericImageView;
 use std::path::PathBuf;
 
 const THUMB_PADDING: f32 = 8.0;
@@ -295,27 +294,20 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 ui.close_menu();
                             }
                             ui.menu_button("Save as", |ui| {
-                                let mut save = |fmt: &str, img_fmt: image::ImageFormat| {
+                                let mut save = |fmt: &str| {
                                     if let Ok(img) = image::open(path) {
-                                        let new_name = path.with_extension(fmt);
-                                        if fmt == "jpeg" {
-                                            let mut output = std::fs::File::create(&new_name).ok();
-                                            if let Some(ref mut f) = output {
-                                                let (w, h) = img.dimensions();
-                                                let rgba = img.to_rgba8();
-                                                let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(f, app.editor_state.save_jpeg_quality);
-                                                enc.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok();
-                                            }
+                                        let new_name = path.with_extension(crate::format_ext::format_to_extension(fmt));
+                                        if let Err(e) = crate::format_ext::save_image(&img, &new_name, fmt, app.editor_state.save_jpeg_quality) {
+                                            eprintln!("Save failed: {e}");
                                         } else {
-                                            img.save_with_format(&new_name, img_fmt).ok();
+                                            app.scan_folder();
                                         }
-                                        app.scan_folder();
                                     }
                                 };
-                                if ui.button("PNG").clicked() { save("png", image::ImageFormat::Png); ui.close_menu(); }
-                                if ui.button("JPEG").clicked() { save("jpeg", image::ImageFormat::Jpeg); ui.close_menu(); }
-                                if ui.button("BMP").clicked() { save("bmp", image::ImageFormat::Bmp); ui.close_menu(); }
-                                if ui.button("WEBP").clicked() { save("webp", image::ImageFormat::WebP); ui.close_menu(); }
+                                if ui.button("PNG").clicked() { save("png"); ui.close_menu(); }
+                                if ui.button("JPEG").clicked() { save("jpeg"); ui.close_menu(); }
+                                if ui.button("BMP").clicked() { save("bmp"); ui.close_menu(); }
+                                if ui.button("WEBP").clicked() { save("webp"); ui.close_menu(); }
                             });
                         });
 

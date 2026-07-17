@@ -277,26 +277,8 @@ fn save_as(app: &mut App) {
     let save_format = app.editor_state.save_format;
     let new_ext = crate::format_ext::format_to_extension(save_format);
     let new_name = path.with_extension(new_ext);
-    let result = match save_format {
-        "jpeg" => {
-            let mut output = match std::fs::File::create(&new_name) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("Save failed: {e}");
-                    return;
-                }
-            };
-            let (w, h) = img.dimensions();
-            let rgba = img.to_rgba8();
-            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, app.editor_state.save_jpeg_quality);
-            encoder.encode(&rgba, w, h, image::ExtendedColorType::Rgba8).ok()
-        }
-        "bmp" => img.save_with_format(&new_name, image::ImageFormat::Bmp).ok(),
-        "webp" => img.save_with_format(&new_name, image::ImageFormat::WebP).ok(),
-        _ => img.save_with_format(&new_name, image::ImageFormat::Png).ok(),
-    };
-
-    if result.is_some() {
-        app.scan_folder();
+    match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
+        Ok(()) => app.scan_folder(),
+        Err(e) => eprintln!("Save failed: {e}"),
     }
 }

@@ -14,22 +14,7 @@ pub fn batch_convert(
         };
         let new_ext = crate::format_ext::format_to_extension(format);
         let new_name = path.with_extension(new_ext);
-        let result = match format {
-            "jpeg" => {
-                let file = match std::fs::File::create(&new_name) {
-                    Ok(f) => f,
-                    Err(e) => { errors.push(format!("{}: {e}", new_name.display())); continue; }
-                };
-                let (w, h) = img.dimensions();
-                let rgb = img.to_rgb8();
-                let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(file, jpeg_quality);
-                encoder.encode(&rgb, w, h, image::ExtendedColorType::Rgb8).map_err(|e| e.to_string())
-            }
-            "png" => img.save_with_format(&new_name, image::ImageFormat::Png).map_err(|e| e.to_string()),
-            "bmp" => img.save_with_format(&new_name, image::ImageFormat::Bmp).map_err(|e| e.to_string()),
-            "webp" => img.save_with_format(&new_name, image::ImageFormat::WebP).map_err(|e| e.to_string()),
-            _ => Err(format!("Unknown format: {format}")),
-        };
+        let result = crate::format_ext::save_image(&img, &new_name, format, jpeg_quality);
         if let Err(e) = result {
             errors.push(format!("{}: {e}", path.display()));
         }
