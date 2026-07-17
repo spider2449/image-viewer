@@ -393,13 +393,72 @@ fn draw_image(
         }
     }
 
+    let crop_active = app.editor_state.crop_active;
     let drag = ui.interact(
         egui::Rect::from_min_size(image_rect.min, available),
         egui::Id::new("viewer_image_drag"),
         egui::Sense::drag(),
     );
-    if drag.dragged() {
+    if crop_active {
+        if drag.drag_started() {
+            if let Some(pos) = mouse_pos {
+                let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
+                app.editor_state.crop_start = Some(img_pos);
+                app.editor_state.crop_end = Some(img_pos);
+            }
+        } else if drag.dragged() {
+            if let Some(pos) = mouse_pos {
+                app.editor_state.crop_end = Some(screen_to_image_pos(pos, draw_rect, tex_size));
+            }
+        }
+    } else if drag.dragged() {
         app.viewer_state.pan_offset += drag.drag_delta();
+    }
+
+    // Crop selection overlay
+    if crop_active {
+        if let (Some(start), Some(end)) =
+            (app.editor_state.crop_start, app.editor_state.crop_end)
+        {
+            let sel_min = image_to_screen_pos(
+                egui::pos2(start.x.min(end.x), start.y.min(end.y)),
+                draw_rect,
+                tex_size,
+            );
+            let sel_max = image_to_screen_pos(
+                egui::pos2(start.x.max(end.x), start.y.max(end.y)),
+                draw_rect,
+                tex_size,
+            );
+            let sel_rect = egui::Rect::from_min_max(sel_min, sel_max);
+            let painter = ui.painter();
+            painter.rect_filled(
+                draw_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::from_black_alpha(120),
+            );
+            ui.painter().image(
+                tex.id(),
+                sel_rect,
+                egui::Rect::from_min_max(
+                    egui::pos2(
+                        start.x.min(end.x) / tex_size.x,
+                        start.y.min(end.y) / tex_size.y,
+                    ),
+                    egui::pos2(
+                        start.x.max(end.x) / tex_size.x,
+                        start.y.max(end.y) / tex_size.y,
+                    ),
+                ),
+                egui::Color32::WHITE,
+            );
+            painter.rect_stroke(
+                sel_rect,
+                egui::CornerRadius::ZERO,
+                egui::Stroke::new(1.5, egui::Color32::from_rgb(0xFF, 0xD5, 0x00)),
+                egui::StrokeKind::Inside,
+            );
+        }
     }
 
     // Styled info overlay
@@ -434,4 +493,16 @@ fn draw_image(
 
 fn ctx_input(ctx: &egui::Context) -> (Option<egui::Pos2>, Vec2) {
     ctx.input(|i| (i.pointer.hover_pos(), i.raw_scroll_delta))
+}
+
+fn screen_to_image_pos(pos: egui::Pos2, draw_rect: egui::Rect, tex_size: Vec2) -> egui::Pos2 {
+    let rel = (pos - draw_rect.min) / draw_rect.size() * tex_size;
+    egui::pos2(
+        rel.x.clamp(0.0, tex_size.x),
+        rel.y.clamp(0.0, tex_size.y),
+    )
+}
+
+fn image_to_screen_pos(pos: egui::Pos2, draw_rect: egui::Rect, tex_size: Vec2) -> egui::Pos2 {
+    draw_rect.min + Vec2::new(pos.x / tex_size.x, pos.y / tex_size.y) * draw_rect.size()
 }

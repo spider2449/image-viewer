@@ -13,11 +13,8 @@ pub struct State {
     pub undo_stack: Vec<(EditOp, DynamicImage)>,
     pub redo_stack: Vec<(EditOp, DynamicImage)>,
     pub current_image: Option<DynamicImage>,
-    #[allow(dead_code)]
     pub crop_active: bool,
-    #[allow(dead_code)]
     pub crop_start: Option<egui::Pos2>,
-    #[allow(dead_code)]
     pub crop_end: Option<egui::Pos2>,
     pub resize_width: u32,
     pub resize_height: u32,
