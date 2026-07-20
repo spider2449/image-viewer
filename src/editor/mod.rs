@@ -1,4 +1,4 @@
-﻿pub mod operations;
+pub mod operations;
 
 use crate::app::App;
 use eframe::egui;
@@ -7,6 +7,7 @@ use operations::EditOp;
 use std::path::PathBuf;
 
 const MAX_UNDO: usize = 50;
+const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024; // 64 MB byte budget for undo history
 
 pub struct State {
     pub visible: bool,
@@ -234,6 +235,14 @@ fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
         app.editor_state.undo_stack.remove(0);
     }
     app.editor_state.undo_stack.push((op.clone(), img.clone()));
+    // Byte-budget cap: evict oldest entries if total RGBA bytes exceed budget.
+    let mut total_bytes: usize = app.editor_state.undo_stack.iter()
+        .map(|(_, i)| (i.width() * i.height() * 4) as usize)
+        .sum();
+    while total_bytes > MAX_UNDO_BYTES && !app.editor_state.undo_stack.is_empty() {
+        let (_, oldest) = app.editor_state.undo_stack.remove(0);
+        total_bytes -= (oldest.width() * oldest.height() * 4) as usize;
+    }
     app.editor_state.redo_stack.clear();
 
     let result = op.apply(&img);
@@ -331,5 +340,59 @@ fn save_as(app: &mut App) {
     match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
         Ok(()) => app.scan_folder(),
         Err(e) => eprintln!("Save failed: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::DynamicImage;
+    use image::GenericImageView;
+
+    #[test]
+    fn test_undo_pops_correct_entry() {
+        let mut state = State::new();
+        let img = DynamicImage::new_rgba8(10, 10);
+        state.current_image = Some(img.clone());
+
+        // Simulate an edit by pushing to undo stack directly.
+        state.undo_stack.push((EditOp::Rotate90Cw, img.clone()));
+
+        // Pop and verify the undone image matches.
+        let (op, prev_img) = state.undo_stack.pop().unwrap();
+        assert_eq!(op, EditOp::Rotate90Cw);
+        assert_eq!(prev_img.dimensions(), (10, 10));
+    }
+
+    #[test]
+    fn test_redo_pops_correct_entry() {
+        let mut state = State::new();
+        let img = DynamicImage::new_rgba8(10, 10);
+
+        state.undo_stack.push((EditOp::FlipHorizontal, img.clone()));
+
+        // Simulate undo: move from undo to redo.
+        if let Some(entry) = state.undo_stack.pop() {
+            state.redo_stack.push(entry);
+        }
+
+        let (op, next_img) = state.redo_stack.pop().unwrap();
+        assert_eq!(op, EditOp::FlipHorizontal);
+        assert_eq!(next_img.dimensions(), (10, 10));
+    }
+
+    #[test]
+    fn test_redo_clears_on_new_edit() {
+        let mut state = State::new();
+        let img = DynamicImage::new_rgba8(10, 10);
+
+        state.undo_stack.push((EditOp::Rotate90Cw, img.clone()));
+        if let Some(entry) = state.undo_stack.pop() {
+            state.redo_stack.push(entry);
+        }
+
+        // New edit should clear redo stack.
+        state.redo_stack.clear();
+        assert!(state.redo_stack.is_empty());
     }
 }

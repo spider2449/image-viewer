@@ -1,6 +1,6 @@
 use image::{DynamicImage, imageops};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum EditOp {
     Crop { x: u32, y: u32, width: u32, height: u32 },
     Rotate180,

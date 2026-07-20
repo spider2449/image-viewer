@@ -84,9 +84,6 @@ impl ExifData {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
 }
 
 fn format_exif_value(field: &exif::Field) -> String {
@@ -230,11 +227,4 @@ mod tests {
         assert!(data.entries[0].1.contains("Cannot read"));
     }
 
-    #[test]
-    fn test_clear() {
-        let mut data = ExifData::new();
-        data.entries.push(("Test".to_string(), "Value".to_string()));
-        data.clear();
-        assert!(data.entries.is_empty());
-    }
 }

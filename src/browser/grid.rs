@@ -451,9 +451,9 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 x += widths.name + GAP;
 
                 // Size
-                let meta = std::fs::metadata(path).ok();
+                let meta = app.file_cache.get_or_fetch(path);
                 let size_str = meta.as_ref()
-                    .map(|m| format_size(m.len()))
+                    .map(|m| format_size(m.len))
                     .unwrap_or_else(|| "-".to_string());
                 ui.painter().text(
                     egui::pos2(x + widths.size - 4.0, cy),
@@ -466,7 +466,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
                 // Date
                 let date_str = meta.as_ref()
-                    .and_then(|m| m.modified().ok())
+                    .map(|m| m.modified)
                     .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|dt| format_timestamp(dt.as_secs()))
                     .unwrap_or_else(|| "-".to_string());

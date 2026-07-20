@@ -7,6 +7,7 @@ mod config;
 mod disk_cache;
 mod editor;
 mod exif;
+mod file_cache;
 mod font_loader;
 mod format_ext;
 mod image_loader;

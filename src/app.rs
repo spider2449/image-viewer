@@ -1,9 +1,10 @@
-﻿use crate::batch;
+use crate::batch;
 use crate::browser;
 use crate::config::Config;
 use crate::disk_cache::DiskCache;
 use crate::editor;
 use crate::exif;
+use crate::file_cache::FileCache;
 use crate::thumbnail_cache::ThumbnailCache;
 use crate::viewer;
 use eframe::{egui, Frame};
@@ -23,7 +24,7 @@ pub struct App {
     pub image_files: Vec<PathBuf>,
     pub selected_image_index: usize,
     pub thumbnail_cache: ThumbnailCache,
-    pub disk_cache: DiskCache,
+    pub file_cache: FileCache,
     pub browser_state: browser::State,
     pub viewer_state: viewer::State,
     pub textures: LruCache<String, egui::TextureHandle>,
@@ -62,7 +63,7 @@ impl App {
             image_files: Vec::new(),
             selected_image_index: 0,
             thumbnail_cache,
-            disk_cache,
+            file_cache: FileCache::new(),
             browser_state,
             viewer_state,
             textures: LruCache::new(NonZeroUsize::new(8).unwrap()),

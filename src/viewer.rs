@@ -192,8 +192,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.colored_label(colors.text_secondary,
                     format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0));
                 ui.separator();
-                if let Ok(meta) = std::fs::metadata(&path) {
-                    let sz = meta.len();
+                if let Some(meta) = app.file_cache.get_or_fetch(&path) {
+                    let sz = meta.len;
                     let size_str = if sz >= 1024 * 1024 {
                         format!("{:.1} MB", sz as f64 / (1024.0 * 1024.0))
                     } else if sz >= 1024 {
@@ -332,31 +332,21 @@ fn draw_image(
         display_size,
     );
 
-    // Checkerboard alpha background (draw behind image)
-    let checker_size = 8.0;
-    let check_colors = [
-        egui::Color32::from_rgb(0x33, 0x33, 0x33),
-        egui::Color32::from_rgb(0x44, 0x44, 0x44),
-    ];
+    // Dark background behind image area (replaces cell-by-cell checkerboard).
+    // The border below provides visual separation from the image.
     {
-        let mut x = draw_rect.min.x;
-        let mut row = 0i32;
-        while x < draw_rect.max.x {
-            let mut y = draw_rect.min.y;
-            let mut col = 0i32;
-            while y < draw_rect.max.y {
-                let idx = ((row & 1) ^ (col & 1)) as usize;
-                let cell = egui::Rect::from_min_size(
-                    egui::pos2(x, y),
-                    egui::Vec2::new(checker_size, checker_size),
-                );
-                ui.painter().rect_filled(cell, egui::CornerRadius::ZERO, check_colors[idx]);
-                y += checker_size;
-                col += 1;
-            }
-            x += checker_size;
-            row += 1;
-        }
+        let bg_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                image_rect.min.x + offset.x + app.viewer_state.pan_offset.x,
+                image_rect.min.y + offset.y + app.viewer_state.pan_offset.y,
+            ),
+            display_size,
+        );
+        ui.painter().rect_filled(
+            bg_rect,
+            egui::CornerRadius::ZERO,
+            egui::Color32::from_rgb(0x1a, 0x1a, 0x1a),
+        );
     }
 
     // Inner border around image area
