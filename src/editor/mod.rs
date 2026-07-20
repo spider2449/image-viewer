@@ -361,6 +361,10 @@ fn save_as(app: &mut App) {
     match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
         Ok(()) => {
             app.scan_folder();
+            // Switch viewer to the newly saved file
+            if let Some(new_index) = app.image_files.iter().position(|p| p == &new_name) {
+                app.switch_to_viewer(new_index);
+            }
             app.editor_state.save_as_filename.clear();
         }
         Err(e) => eprintln!("Save failed: {e}"),
