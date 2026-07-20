@@ -313,13 +313,22 @@ fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
         Some(rgba_img) => image::DynamicImage::ImageRgba8(rgba_img),
         None => return,
     };
+    // Push current image to undo stack before replacing.
+    if let Some(ref current) = app.editor_state.current_image {
+        if app.editor_state.undo_stack.len() >= MAX_UNDO {
+            app.editor_state.undo_stack.remove(0);
+        }
+        app.editor_state.undo_stack.push((EditOp::NoOp, current.clone()));
+    }
+
     app.editor_state.current_image = Some(img.clone());
     let (w, h) = img.dimensions();
     app.editor_state.resize_width = w;
     app.editor_state.resize_height = h;
     upload_texture(app, ctx, &img);
-    // Clear undo/redo stacks since this is a new paste
-    app.editor_state.undo_stack.clear();
+
+
+
     app.editor_state.redo_stack.clear();
 }
 
