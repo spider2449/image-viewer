@@ -22,6 +22,7 @@ pub struct State {
     pub resize_lock_aspect: bool,
     pub save_format: &'static str,
     pub save_jpeg_quality: u8,
+    pub save_as_filename: String,
 }
 
 impl State {
@@ -39,6 +40,7 @@ impl State {
             resize_lock_aspect: true,
             save_format: "png",
             save_jpeg_quality: 90,
+            save_as_filename: String::new(),
         }
     }
 
@@ -205,7 +207,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 if app.editor_state.save_format == "jpeg" {
                     ui.add(egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100).text("Quality"));
                 }
-                if ui.button("Save As...").clicked() {
+                // Filename input
+                egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
+                    .hint_text("Enter filename")
+                    .show(ui);
+                if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
                     save_as(app);
                 }
             });
@@ -338,16 +344,20 @@ fn save_as(app: &mut App) {
         None => return,
     };
 
-    let path = match app.image_files.get(app.selected_image_index) {
+    let base_path = match app.image_files.get(app.selected_image_index) {
         Some(p) => p.clone(),
         None => return,
     };
 
     let save_format = app.editor_state.save_format;
     let new_ext = crate::format_ext::format_to_extension(save_format);
-    let new_name = path.with_extension(new_ext);
+    let filename = &app.editor_state.save_as_filename;
+    let new_name = base_path.with_file_name(format!("{}.{}", filename, new_ext));
     match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
-        Ok(()) => app.scan_folder(),
+        Ok(()) => {
+            app.scan_folder();
+            app.editor_state.save_as_filename.clear();
+        }
         Err(e) => eprintln!("Save failed: {e}"),
     }
 }
