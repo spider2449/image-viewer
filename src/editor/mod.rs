@@ -1,4 +1,4 @@
-pub mod operations;
+﻿pub mod operations;
 
 use crate::app::App;
 use eframe::egui;
@@ -182,6 +182,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
 
                 ui.separator();
+                // Paste from clipboard
+                ui.label(egui::RichText::new("Clipboard").strong().color(colors.accent));
+                if ui.button("Paste").clicked() {
+                    paste_from_clipboard(app, ctx);
+                }
+
+                ui.separator();
+
 
                 // Save As section
                 ui.label(egui::RichText::new("Save As").strong().color(colors.accent));
@@ -274,6 +282,36 @@ fn apply_crop(app: &mut App, ctx: &egui::Context) {
         app.editor_state.crop_start = None;
         app.editor_state.crop_end = None;
     }
+}
+
+fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
+    let mut clipboard = match arboard::Clipboard::new() {
+        Ok(cb) => cb,
+        Err(e) => {
+            eprintln!("Failed to open clipboard: {e}");
+            return;
+        }
+    };
+    let image = match clipboard.get_image() {
+        Ok(img) => img,
+        Err(e) => {
+            eprintln!("Failed to read image from clipboard: {e}");
+            return;
+        }
+    };
+    let rgba = image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes.to_vec());
+    let img = match rgba {
+        Some(rgba_img) => image::DynamicImage::ImageRgba8(rgba_img),
+        None => return,
+    };
+    app.editor_state.current_image = Some(img.clone());
+    let (w, h) = img.dimensions();
+    app.editor_state.resize_width = w;
+    app.editor_state.resize_height = h;
+    upload_texture(app, ctx, &img);
+    // Clear undo/redo stacks since this is a new paste
+    app.editor_state.undo_stack.clear();
+    app.editor_state.redo_stack.clear();
 }
 
 fn save_as(app: &mut App) {

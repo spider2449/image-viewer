@@ -1,4 +1,4 @@
-use crate::batch;
+﻿use crate::batch;
 use crate::browser;
 use crate::config::Config;
 use crate::disk_cache::DiskCache;
@@ -174,6 +174,32 @@ impl App {
         }
     }
 
+    pub fn create_new_file(&mut self) {
+        let folder = match &self.current_folder {
+            Some(f) => f.clone(),
+            None => return,
+        };
+        let mut counter = 1;
+        loop {
+            let filename = format!("untitled_{}.png", counter);
+            let path = folder.join(&filename);
+            if !path.exists() {
+                let img = image::DynamicImage::new_rgba8(800, 600);
+                if let Ok(()) = img.save(&path) {
+                    self.image_files.push(path);
+                    let index = self.image_files.len() - 1;
+                    self.switch_to_viewer(index);
+                    if !self.editor_state.visible {
+                        self.editor_state.visible = true;
+                    }
+                    self.editor_state.load_image(&self.image_files[index]);
+                }
+                return;
+            }
+            counter += 1;
+        }
+    }
+
     pub fn next_image(&mut self) {
         if self.selected_image_index + 1 < self.image_files.len() {
             self.selected_image_index += 1;
@@ -230,6 +256,10 @@ impl eframe::App for App {
                     let panel_bg = self.theme_colors().panel_bg;
                     ui.style_mut().visuals.widgets.inactive.bg_fill = panel_bg;
                     ui.menu_button("File", |ui| {
+                        if ui.button("New File").clicked() {
+                            self.create_new_file();
+                            ui.close_menu();
+                        }
                         if ui.button("Refresh").clicked() {
                             self.scan_folder();
                             ui.close_menu();

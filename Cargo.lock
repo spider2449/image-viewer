@@ -1588,6 +1588,7 @@ dependencies = [
 name = "image-viewer"
 version = "0.1.49"
 dependencies = [
+ "arboard",
  "eframe",
  "egui",
  "image",
