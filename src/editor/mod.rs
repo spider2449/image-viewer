@@ -52,6 +52,11 @@ impl State {
             self.resize_height = h;
             self.undo_stack.clear();
             self.redo_stack.clear();
+            self.save_as_filename = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
         }
     }
 }
