@@ -356,11 +356,13 @@ fn save_as(app: &mut App) {
 
     let save_format = app.editor_state.save_format;
     let new_ext = crate::format_ext::format_to_extension(save_format);
-    let filename = &app.editor_state.save_as_filename;
+    let filename = app.editor_state.save_as_filename.clone();
     let new_name = base_path.with_file_name(format!("{}.{}", filename, new_ext));
     match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
         Ok(()) => {
             app.scan_folder();
+            // Update the filename field to reflect the saved file.
+            app.editor_state.save_as_filename = filename.clone();
             // Switch viewer to the newly saved file — load_image populates the filename field.
             if let Some(new_index) = app.image_files.iter().position(|p| p == &new_name) {
                 app.switch_to_viewer(new_index);
