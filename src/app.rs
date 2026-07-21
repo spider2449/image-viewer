@@ -160,17 +160,26 @@ impl App {
         }
     }
 
+    /// Point the viewer at `index`: update the selection and refresh the
+    /// editor image and EXIF data so every navigation path stays consistent.
+    pub fn select_image(&mut self, index: usize) {
+        if index >= self.image_files.len() {
+            return;
+        }
+        self.selected_image_index = index;
+        if let Some(p) = self.image_files.get(index) {
+            if self.editor_state.visible {
+                self.editor_state.load_image(p);
+            } else {
+                self.editor_state.current_image = None;
+            }
+            self.exif_state.parse(p);
+        }
+    }
+
     pub fn switch_to_viewer(&mut self, index: usize) {
         if index < self.image_files.len() {
-            self.selected_image_index = index;
-            if let Some(p) = self.image_files.get(index) {
-                if self.editor_state.visible {
-                    self.editor_state.load_image(p);
-                } else {
-                    self.editor_state.current_image = None;
-                }
-                self.exif_state.parse(p);
-            }
+            self.select_image(index);
             self.mode = Mode::Viewer;
         }
     }
@@ -203,29 +212,13 @@ impl App {
 
     pub fn next_image(&mut self) {
         if self.selected_image_index + 1 < self.image_files.len() {
-            self.selected_image_index += 1;
-            if let Some(p) = self.image_files.get(self.selected_image_index) {
-                if self.editor_state.visible {
-                    self.editor_state.load_image(p);
-                } else {
-                    self.editor_state.current_image = None;
-                }
-                self.exif_state.parse(p);
-            }
+            self.select_image(self.selected_image_index + 1);
         }
     }
 
     pub fn prev_image(&mut self) {
         if self.selected_image_index > 0 {
-            self.selected_image_index -= 1;
-            if let Some(p) = self.image_files.get(self.selected_image_index) {
-                if self.editor_state.visible {
-                    self.editor_state.load_image(p);
-                } else {
-                    self.editor_state.current_image = None;
-                }
-                self.exif_state.parse(p);
-            }
+            self.select_image(self.selected_image_index - 1);
         }
     }
 }
@@ -237,12 +230,12 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         while let Some(result) = self.thumbnail_cache.poll() {
-            self.browser_state.thumbnails.insert(result.path, result.image);
+            self.browser_state.thumbnails.put(result.path, result.image);
         }
 
         let decode_size = ((self.config.thumb_size * 1.5).ceil() as u32).max(200);
         for path in &self.image_files {
-            if !self.browser_state.thumbnails.contains_key(path) {
+            if !self.browser_state.thumbnails.contains(path) {
                 self.thumbnail_cache.request(path.clone(), decode_size);
             }
         }

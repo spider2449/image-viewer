@@ -229,7 +229,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                 ),
                                 Color32::WHITE,
                             );
-                        } else if app.browser_state.thumbnails.contains_key(path) {
+                        } else if app.browser_state.thumbnails.contains(path) {
                             ui.painter().text(
                                 thumb_rect.center(),
                                 egui::Align2::CENTER_CENTER,
@@ -256,19 +256,32 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             rect.min + Vec2::new(4.0, app.config.thumb_size),
                             Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
                         );
-                        let display_name = truncate_name(&name, 18);
-                        ui.painter().text(
-                            label_rect.left_center(),
-                            egui::Align2::LEFT_CENTER,
-                            &display_name,
-                            egui::FontId::proportional(11.0),
-                            colors.text_secondary,
-                        );
+                        if app.browser_state.rename_target == Some(i) {
+                            inline_rename(app, ui, path, label_rect);
+                        } else {
+                            let display_name = truncate_name(&name, 18);
+                            ui.painter().text(
+                                label_rect.left_center(),
+                                egui::Align2::LEFT_CENTER,
+                                &display_name,
+                                egui::FontId::proportional(11.0),
+                                colors.text_secondary,
+                            );
+                        }
 
                         // Context menu
                         response.context_menu(|ui| {
                             if ui.button("Open").clicked() {
                                 app.switch_to_viewer(i);
+                                ui.close_menu();
+                            }
+                            if ui.button("Rename").clicked() {
+                                app.browser_state.rename_target = Some(i);
+                                app.browser_state.rename_buffer = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                app.browser_state.rename_focus = true;
                                 ui.close_menu();
                             }
                             if ui.button("Delete").clicked() {
@@ -303,17 +316,73 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             });
                         });
 
-                        // Selection + double-click
-                        if response.double_clicked() {
-                            app.switch_to_viewer(i);
-                            return;
-                        }
-                        if response.clicked() {
-                            app.browser_state.selected_thumb = Some(i);
+                        // Selection + double-click (suppressed while renaming this cell)
+                        if app.browser_state.rename_target != Some(i) {
+                            if response.double_clicked() {
+                                app.switch_to_viewer(i);
+                                return;
+                            }
+                            if response.clicked() {
+                                app.browser_state.selected_thumb = Some(i);
+                            }
                         }
                     }
                 });
         });
+}
+
+/// Draw the inline rename text field for a thumbnail cell and commit or cancel
+/// the edit based on user input. Enter commits, Escape or clicking away cancels.
+fn inline_rename(app: &mut App, ui: &mut egui::Ui, path: &PathBuf, rect: egui::Rect) {
+    let mut buf = std::mem::take(&mut app.browser_state.rename_buffer);
+    let resp = ui.put(
+        rect,
+        egui::TextEdit::singleline(&mut buf)
+            .font(egui::FontId::proportional(11.0))
+            .margin(egui::Margin::symmetric(2, 2)),
+    );
+    app.browser_state.rename_buffer = buf;
+
+    if app.browser_state.rename_focus {
+        resp.request_focus();
+        app.browser_state.rename_focus = false;
+    }
+
+    let enter = resp.lost_focus() && ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+    let escape = ui.input(|inp| inp.key_pressed(egui::Key::Escape));
+    // lost_focus without Enter (e.g. clicking elsewhere) cancels the edit.
+    let cancelled = escape || (resp.lost_focus() && !enter);
+
+    if enter {
+        commit_rename(app, path);
+        app.browser_state.rename_target = None;
+    } else if cancelled {
+        app.browser_state.rename_target = None;
+    }
+}
+
+/// Rename `path` to the full filename (including extension) in the edit buffer.
+fn commit_rename(app: &mut App, path: &PathBuf) {
+    let new_name = app.browser_state.rename_buffer.trim().to_string();
+    if new_name.is_empty() {
+        return;
+    }
+    // No-op if the name is unchanged.
+    if path.file_name().map(|n| n.to_string_lossy().to_string()).as_deref() == Some(new_name.as_str()) {
+        return;
+    }
+    let dest = path.with_file_name(&new_name);
+    if dest.exists() {
+        eprintln!("Rename failed: {} already exists", dest.display());
+        return;
+    }
+    match crate::browser::files::execute(crate::browser::files::FileOp::Rename {
+        old: path.clone(),
+        new: new_name,
+    }) {
+        Ok(()) => app.scan_folder(),
+        Err(e) => eprintln!("{e}"),
+    }
 }
 
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {

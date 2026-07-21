@@ -156,14 +156,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                         }
                         if ui.button("\u{25C0}").clicked() {
-                            if app.selected_image_index > 0 {
-                                app.selected_image_index -= 1;
-                            }
+                            app.prev_image();
                         }
                         if ui.button("\u{25B6}").clicked() {
-                            if app.selected_image_index + 1 < app.image_files.len() {
-                                app.selected_image_index += 1;
-                            }
+                            app.next_image();
                         }
                         if ui.button("Fit").clicked() {
                             app.viewer_state.zoom = app.viewer_state.fit_zoom;
@@ -275,7 +271,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             {
                 app.viewer_state.slideshow_timer = 0.0;
                 if app.selected_image_index + 1 < app.image_files.len() {
-                    app.selected_image_index += 1;
+                    app.next_image();
                 } else {
                     app.viewer_state.is_slideshow = false;
                 }

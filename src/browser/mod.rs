@@ -5,12 +5,17 @@ pub mod tree;
 use crate::app::App;
 use eframe::egui;
 use lru::LruCache;
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+// Decoded thumbnail bitmaps are bounded by an LRU so that browsing a folder
+// with thousands of images does not retain every bitmap in memory. Kept a bit
+// larger than `thumb_textures` so a texture rebuild rarely needs a re-decode.
+// Eviction is safe: a miss is re-requested by `App::update` on the next frame.
+const THUMBNAIL_CACHE_CAP: usize = 1024;
+
 pub struct State {
-    pub thumbnails: HashMap<PathBuf, Option<egui::ColorImage>>,
+    pub thumbnails: LruCache<PathBuf, Option<egui::ColorImage>>,
     pub thumb_textures: LruCache<PathBuf, egui::TextureHandle>,
     pub selected_thumb: Option<usize>,
     pub tree_nodes: Vec<tree::TreeNode>,
@@ -20,12 +25,18 @@ pub struct State {
     #[allow(dead_code)]
     pub scroll_to_selected: bool,
     pub thumb_decode_size: u32,
+    /// Index of the thumbnail currently being renamed inline, if any.
+    pub rename_target: Option<usize>,
+    /// Edit buffer holding the new file stem while renaming.
+    pub rename_buffer: String,
+    /// Set when a rename has just started so the text field grabs focus once.
+    pub rename_focus: bool,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
-            thumbnails: HashMap::new(),
+            thumbnails: LruCache::new(NonZeroUsize::new(THUMBNAIL_CACHE_CAP).unwrap()),
             thumb_textures: LruCache::new(NonZeroUsize::new(512).unwrap()),
             selected_thumb: None,
             tree_nodes: Vec::new(),
@@ -34,6 +45,9 @@ impl State {
             tree_width: 200.0,
             scroll_to_selected: false,
             thumb_decode_size: 0,
+            rename_target: None,
+            rename_buffer: String::new(),
+            rename_focus: false,
         }
     }
 }
