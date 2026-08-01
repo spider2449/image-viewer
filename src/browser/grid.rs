@@ -286,12 +286,12 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                             }
                             if ui.button("Delete").clicked() {
                                 let _ = crate::browser::files::execute(crate::browser::files::FileOp::Delete { path: path.clone() });
-                                app.scan_folder();
+                                app.rescan_selecting(None);
                                 ui.close_menu();
                             }
                             if ui.button("Copy").clicked() {
                                 let _ = crate::browser::files::execute(crate::browser::files::FileOp::Copy { path: path.clone() });
-                                app.scan_folder();
+                                app.rescan_selecting(Some(path.clone()));
                                 ui.close_menu();
                             }
                             if ui.button("Open in system viewer").clicked() {
@@ -305,7 +305,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                                         if let Err(e) = crate::format_ext::save_image(&img, &new_name, fmt, app.editor_state.save_jpeg_quality) {
                                             eprintln!("Save failed: {e}");
                                         } else {
-                                            app.scan_folder();
+                                            app.rescan_selecting(Some(path.clone()));
                                         }
                                     }
                                 };
@@ -380,7 +380,7 @@ fn commit_rename(app: &mut App, path: &PathBuf) {
         old: path.clone(),
         new: new_name,
     }) {
-        Ok(()) => app.scan_folder(),
+        Ok(()) => app.rescan_selecting(Some(dest)),
         Err(e) => eprintln!("{e}"),
     }
 }

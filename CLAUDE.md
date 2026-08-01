@@ -19,7 +19,7 @@ Bump the patch version in `Cargo.toml` before each commit. No tooling — manual
 
 ## Architecture
 
-- **egui/eframe 0.31** — immediate mode GUI, single window. `ctx.request_repaint()` is called every frame in `app::update` — required for egui polling, not a bug.
+- **egui/eframe 0.31** — immediate mode GUI, single window. `app::update` requests a repaint only when work is pending (active slideshow or thumbnails still decoding); otherwise egui idles. Don't reintroduce an unconditional per-frame `ctx.request_repaint()` — it burns CPU when nothing is changing.
 - **`image` crate 0.25** — decoding; features limited to png, jpeg, bmp, gif, tiff, webp.
 - **Modes:** `Browser` (folder tree left + thumbnail grid center) ↔ `Viewer` (image display + optional right-side editor panel).
 - **Thumbnail cache:** background `std::thread` workers + LRU via `lru` crate. `Arc<Mutex<Receiver>>` pattern with `try_recv` + sleep to avoid blocking. Requests all images on scan; `update` re-requests any missing thumbnail each frame.

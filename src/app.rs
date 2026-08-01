@@ -102,6 +102,11 @@ impl App {
         self.browser_state.thumbnails.clear();
         self.browser_state.thumb_textures.clear();
         self.browser_state.tree_nodes.clear(); // rebuild tree on next frame
+        // The old selection/rename indices refer to the pre-scan ordering and
+        // are meaningless once the list is rebuilt and re-sorted. Mutation paths
+        // that want to keep a selection restore it via `rescan_selecting`.
+        self.browser_state.selected_thumb = None;
+        self.browser_state.rename_target = None;
         let folder = match &self.current_folder {
             Some(f) => f.clone(),
             None => return,
@@ -158,6 +163,17 @@ impl App {
         for path in &self.image_files {
             self.thumbnail_cache.request(path.clone(), decode_size);
         }
+    }
+
+    /// Rescan the current folder and restore the browser grid selection to the
+    /// file at `keep` (by path), clearing it if that path no longer exists or
+    /// `keep` is `None`. Use after mutations (rename, copy, delete, save-as)
+    /// that reorder or change the file list, so the highlight follows the file
+    /// rather than sticking to a now-stale index.
+    pub fn rescan_selecting(&mut self, keep: Option<PathBuf>) {
+        self.scan_folder();
+        self.browser_state.selected_thumb =
+            keep.and_then(|p| self.image_files.iter().position(|q| *q == p));
     }
 
     /// Point the viewer at `index`: update the selection and refresh the
