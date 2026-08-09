@@ -33,12 +33,22 @@ pub fn is_supported_extension(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn to_8bit_dynamic(img: &DynamicImage) -> DynamicImage {
+    match img {
+        DynamicImage::ImageRgb32F(_) | DynamicImage::ImageRgba32F(_) => {
+            DynamicImage::ImageRgba8(img.to_rgba8())
+        }
+        other => other.clone(),
+    }
+}
+
 pub fn save_image(
     img: &DynamicImage,
     path: &Path,
     format: &str,
     jpeg_quality: u8,
 ) -> Result<(), String> {
+    let img = to_8bit_dynamic(img);
     match format {
         "jpeg" => {
             let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
@@ -105,5 +115,19 @@ mod tests {
     fn test_save_image_unknown_format_errors() {
         let img = image::DynamicImage::new_rgba8(2, 2);
         assert!(save_image(&img, std::path::Path::new("x.zzz"), "zzz", 90).is_err());
+    }
+
+    #[test]
+    fn test_save_image_rgb32f_as_png_succeeds() {
+        let dir = std::env::temp_dir().join("save_image_test_rgb32f_png");
+        let _ = std::fs::create_dir_all(&dir);
+        let dst = dir.join("out.png");
+        let img = image::DynamicImage::ImageRgb32F(image::Rgb32FImage::new(8, 8));
+        let result = save_image(&img, &dst, "png", 90);
+        assert!(result.is_ok(), "rgb32f->png must succeed: {result:?}");
+        let len = std::fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
+        assert!(len > 0, "png file must not be empty, got {len} bytes");
+        assert!(image::open(&dst).is_ok(), "saved png must be decodable");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
