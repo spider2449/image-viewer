@@ -9,6 +9,7 @@ pub fn format_to_extension(format: &str) -> &'static str {
         "webp" => "webp",
         "gif" => "gif",
         "tiff" => "tif",
+        "exr" => "exr",
         _ => "",
     }
 }
@@ -21,6 +22,7 @@ pub fn extension_to_image_format(ext: &str) -> Option<ImageFormat> {
         "gif" => Some(ImageFormat::Gif),
         "tif" | "tiff" => Some(ImageFormat::Tiff),
         "webp" => Some(ImageFormat::WebP),
+        "exr" => Some(ImageFormat::OpenExr),
         _ => None,
     }
 }
@@ -71,6 +73,7 @@ mod tests {
         assert_eq!(extension_to_image_format("PNG"), Some(ImageFormat::Png));
         assert_eq!(extension_to_image_format("Jpg"), Some(ImageFormat::Jpeg));
         assert_eq!(extension_to_image_format("JPEG"), Some(ImageFormat::Jpeg));
+        assert_eq!(extension_to_image_format("EXR"), Some(ImageFormat::OpenExr));
         assert_eq!(extension_to_image_format("xyz"), None);
     }
 
@@ -79,6 +82,8 @@ mod tests {
         assert!(is_supported_extension(std::path::Path::new("a.PNG")));
         assert!(is_supported_extension(std::path::Path::new("a.Jpg")));
         assert!(is_supported_extension(std::path::Path::new("a.tiff")));
+        assert!(is_supported_extension(std::path::Path::new("a.exr")));
+        assert!(is_supported_extension(std::path::Path::new("A.EXR")));
         assert!(!is_supported_extension(std::path::Path::new("a.txt")));
         assert!(!is_supported_extension(std::path::Path::new("noext")));
     }
