@@ -66,7 +66,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         .button(egui::RichText::new("\u{2190} Browser").color(colors.accent))
                         .clicked()
                     {
-                        app.mode = Mode::Browser;
+                        app.request_browser();
                     }
                     ui.separator();
                     if ui.button("\u{25C0} Prev").clicked() {
@@ -174,7 +174,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     );
                     ui.horizontal(|ui| {
                         if ui.button("\u{2190} Browser").clicked() {
-                            app.mode = Mode::Browser;
+                            app.request_browser();
                             app.viewer_state.is_fullscreen = false;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                         }
@@ -253,6 +253,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             if app.viewer_state.is_fullscreen {
                                 app.viewer_state.is_fullscreen = false;
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                            } else {
+                                app.request_browser();
                             }
                         }
                         egui::Key::F11 => {

@@ -7,7 +7,7 @@ A cross-platform desktop image viewer and editor built with [egui](https://githu
 - **Browser mode** — folder tree navigation with thumbnail grid or list view
 - **Viewer mode** — zoom, pan, fit-to-window, 1:1, and fullscreen display
 - **Slideshow** — automatic playback with configurable interval
-- **Editor** — live exposure/color adjustments, auto contrast, effects, blur/sharpen, crop, transforms, advanced resize, undo/redo, and save as
+- **Editor** — live adjustments, effects, transforms, advanced resize, complete pre-save history, Revert All, and unsaved-navigation protection
 - **Batch processing** — background conversion, rename, and resize with progress and cancellation
 - **Recoverable deletion** — confirm folder deletion and move items to the recycle bin/trash
 - **EXIF metadata** — view camera settings and file info
@@ -47,6 +47,8 @@ The binary is at `target/release/image-viewer.exe` (Windows) or `target/release/
 | `I` | Toggle image info overlay |
 | `F` | Fit to window |
 | `1` | 1:1 zoom |
+| `Ctrl+Z` | Undo edit or cancel the live adjustment preview |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo edit |
 
 ## Configuration
 

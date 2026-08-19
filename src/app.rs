@@ -182,6 +182,12 @@ impl App {
         if index >= self.image_files.len() {
             return;
         }
+        if index != self.selected_image_index && self.editor_state.has_unsaved_changes() {
+            self.editor_state.pending_image_index = Some(index);
+            self.editor_state.visible = true;
+            self.viewer_state.is_slideshow = false;
+            return;
+        }
         if !self.editor_state.adjustments.is_neutral() {
             if let Some(path) = self.image_files.get(self.selected_image_index) {
                 self.textures.pop(path.to_string_lossy().as_ref());
@@ -205,6 +211,17 @@ impl App {
         if index < self.image_files.len() {
             self.select_image(index);
             self.mode = Mode::Viewer;
+        }
+    }
+
+    pub fn request_browser(&mut self) {
+        if self.editor_state.has_unsaved_changes() {
+            self.editor_state.pending_image_index = None;
+            self.editor_state.pending_browser_exit = true;
+            self.editor_state.visible = true;
+            self.viewer_state.is_slideshow = false;
+        } else {
+            self.mode = Mode::Browser;
         }
     }
 
@@ -409,6 +426,14 @@ impl eframe::App for App {
 
                         ui.label("1");
                         ui.label("100% zoom");
+                        ui.end_row();
+
+                        ui.label("Ctrl+Z");
+                        ui.label("Undo edit / cancel adjustment preview");
+                        ui.end_row();
+
+                        ui.label("Ctrl+Y / Ctrl+Shift+Z");
+                        ui.label("Redo edit");
                         ui.end_row();
                     });
                 });

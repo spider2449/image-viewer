@@ -1,4 +1,5 @@
 use image::{imageops, DynamicImage, RgbaImage};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResizeMode {
@@ -110,6 +111,7 @@ pub enum EditOp {
         sigma: f32,
         threshold: i32,
     },
+    Replace(Arc<DynamicImage>),
     #[allow(dead_code)]
     NoOp,
 }
@@ -132,6 +134,7 @@ impl EditOp {
             EditOp::Invert => "Invert",
             EditOp::Blur(_) => "Blur",
             EditOp::Sharpen { .. } => "Sharpen",
+            EditOp::Replace(_) => "Replace image",
             EditOp::NoOp => "",
         }
     }
@@ -172,6 +175,7 @@ impl EditOp {
             EditOp::Sharpen { sigma, threshold } => {
                 img.unsharpen((*sigma).max(0.1), (*threshold).max(0))
             }
+            EditOp::Replace(image) => image.as_ref().clone(),
             EditOp::NoOp => img.clone(),
         }
     }
