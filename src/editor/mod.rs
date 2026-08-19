@@ -5,14 +5,15 @@ use eframe::egui;
 use image::{DynamicImage, GenericImageView};
 use operations::{ColorAdjustments, EditOp, ResizeFilter, ResizeMode};
 use std::path::PathBuf;
-
-const MAX_UNDO: usize = 50;
-const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024; // 64 MB byte budget for undo history
+use std::sync::Arc;
 
 pub struct State {
     pub visible: bool,
-    pub undo_stack: Vec<DynamicImage>,
-    pub redo_stack: Vec<DynamicImage>,
+    pub history: Vec<EditOp>,
+    pub history_index: usize,
+    pub pending_image_index: Option<usize>,
+    pub pending_browser_exit: bool,
+    pub original_image: Option<DynamicImage>,
     pub current_image: Option<DynamicImage>,
     pub crop_active: bool,
     pub crop_start: Option<egui::Pos2>,
@@ -35,8 +36,11 @@ impl State {
     pub fn new() -> Self {
         Self {
             visible: false,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            history: Vec::new(),
+            history_index: 0,
+            pending_image_index: None,
+            pending_browser_exit: false,
+            original_image: None,
             current_image: None,
             crop_active: false,
             crop_start: None,
@@ -59,12 +63,13 @@ impl State {
     pub fn load_image(&mut self, path: &PathBuf) {
         if let Ok(img) = image::open(path) {
             let (w, h) = img.dimensions();
+            self.original_image = Some(img.clone());
             self.current_image = Some(img);
             self.resize_width = w;
             self.resize_height = h;
             self.adjustments = ColorAdjustments::default();
-            self.undo_stack.clear();
-            self.redo_stack.clear();
+            self.history.clear();
+            self.history_index = 0;
             self.save_as_filename = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -73,66 +78,99 @@ impl State {
         }
     }
 
-    fn image_bytes(image: &DynamicImage) -> usize {
-        image.as_bytes().len()
-    }
-
-    fn push_bounded(stack: &mut Vec<DynamicImage>, image: DynamicImage) {
-        stack.push(image);
-        while stack.len() > MAX_UNDO {
-            stack.remove(0);
-        }
-        let mut total: usize = stack.iter().map(Self::image_bytes).sum();
-        while total > MAX_UNDO_BYTES && stack.len() > 1 {
-            total -= Self::image_bytes(&stack.remove(0));
-        }
-    }
-
-    fn install_edit(&mut self, result: DynamicImage) -> bool {
-        let Some(current) = self.current_image.take() else {
-            return false;
-        };
-        self.current_image = Some(result);
-        Self::push_bounded(&mut self.undo_stack, current);
-        self.redo_stack.clear();
-        true
-    }
-
     fn apply_operation(&mut self, op: &EditOp) -> bool {
         let Some(current) = self.current_image.as_ref() else {
             return false;
         };
-        self.install_edit(op.apply(current))
+        let result = op.apply(current);
+        self.history.truncate(self.history_index);
+        self.history.push(op.clone());
+        self.history_index += 1;
+        self.current_image = Some(result);
+        true
     }
 
     fn replace_image(&mut self, image: DynamicImage) -> bool {
-        self.install_edit(image)
+        self.apply_operation(&EditOp::Replace(Arc::new(image)))
+    }
+
+    fn commit_adjustments(&mut self) -> bool {
+        if self.adjustments.is_neutral() {
+            return false;
+        }
+        let adjustments = self.adjustments;
+        let committed = self.apply_operation(&EditOp::Adjust(adjustments));
+        if committed {
+            self.adjustments = ColorAdjustments::default();
+        }
+        committed
     }
 
     fn undo_edit(&mut self) -> bool {
-        if self.current_image.is_none() {
+        if !self.can_undo() {
             return false;
         }
-        let Some(previous) = self.undo_stack.pop() else {
-            return false;
-        };
-        let current = self.current_image.take().unwrap();
-        Self::push_bounded(&mut self.redo_stack, current);
-        self.current_image = Some(previous);
+        self.history_index -= 1;
+        self.rebuild_current();
         true
     }
 
     fn redo_edit(&mut self) -> bool {
-        if self.current_image.is_none() {
+        if !self.can_redo() {
             return false;
         }
-        let Some(next) = self.redo_stack.pop() else {
+        let operation = &self.history[self.history_index];
+        let Some(current) = self.current_image.as_ref() else {
             return false;
         };
-        let current = self.current_image.take().unwrap();
-        Self::push_bounded(&mut self.undo_stack, current);
-        self.current_image = Some(next);
+        self.current_image = Some(operation.apply(current));
+        self.history_index += 1;
         true
+    }
+
+    fn revert_all(&mut self) -> bool {
+        if !self.can_undo() {
+            return false;
+        }
+        self.history_index = 0;
+        self.rebuild_current();
+        true
+    }
+
+    fn rebuild_current(&mut self) {
+        let Some(mut image) = self.original_image.clone() else {
+            return;
+        };
+        for operation in &self.history[..self.history_index] {
+            image = operation.apply(&image);
+        }
+        self.current_image = Some(image);
+    }
+
+    fn can_undo(&self) -> bool {
+        self.history_index > 0
+    }
+
+    fn can_redo(&self) -> bool {
+        self.history_index < self.history.len()
+    }
+
+    pub(crate) fn has_unsaved_changes(&self) -> bool {
+        self.history_index > 0 || !self.adjustments.is_neutral()
+    }
+
+    fn mark_saved(&mut self) {
+        self.original_image = self.current_image.clone();
+        self.history.clear();
+        self.history_index = 0;
+        self.adjustments = ColorAdjustments::default();
+    }
+
+    fn discard_changes(&mut self) {
+        self.current_image = self.original_image.clone();
+        self.history.clear();
+        self.history_index = 0;
+        self.adjustments = ColorAdjustments::default();
     }
 }
 
@@ -141,6 +179,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         return;
     }
 
+    handle_history_shortcuts(app, ctx);
     let colors = app.theme_colors();
     let mut preview_changed = false;
 
@@ -167,22 +206,42 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 });
                 ui.separator();
 
-                ui.horizontal(|ui| {
-                    let can_undo = !app.editor_state.undo_stack.is_empty();
+                ui.horizontal_wrapped(|ui| {
+                    let has_preview = !app.editor_state.adjustments.is_neutral();
+                    let can_undo = has_preview || app.editor_state.can_undo();
                     if ui
                         .add_enabled(can_undo, egui::Button::new("\u{21A9} Undo"))
                         .clicked()
                     {
                         undo(app, ctx);
                     }
-                    let can_redo = !app.editor_state.redo_stack.is_empty();
+                    let can_redo = !has_preview && app.editor_state.can_redo();
                     if ui
                         .add_enabled(can_redo, egui::Button::new("\u{21AA} Redo"))
                         .clicked()
                     {
                         redo(app, ctx);
                     }
+                    if ui
+                        .add_enabled(can_undo, egui::Button::new("Revert All"))
+                        .on_hover_text("Return to the image loaded from disk")
+                        .clicked()
+                    {
+                        revert_all(app, ctx);
+                    }
                 });
+                let edit_count = app.editor_state.history_index;
+                if edit_count > 0 || !app.editor_state.adjustments.is_neutral() {
+                    let preview_suffix = if app.editor_state.adjustments.is_neutral() {
+                        ""
+                    } else {
+                        " + live preview"
+                    };
+                    ui.colored_label(
+                        colors.text_secondary,
+                        format!("{edit_count} unsaved edit(s){preview_suffix}"),
+                    );
+                }
 
                 ui.separator();
                 egui::CollapsingHeader::new(
@@ -199,8 +258,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             .add_enabled(can_apply, egui::Button::new("Apply"))
                             .clicked()
                         {
-                            let adjustments = app.editor_state.adjustments;
-                            apply_op(app, ctx, EditOp::Adjust(adjustments));
+                            if app.editor_state.commit_adjustments() {
+                                sync_editor_image(app, ctx);
+                            }
                         }
                         if ui
                             .add_enabled(can_apply, egui::Button::new("Reset"))
@@ -299,6 +359,70 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     if preview_changed {
         preview_adjustments(app, ctx);
+    }
+    show_unsaved_navigation_dialog(app, ctx);
+}
+
+fn show_unsaved_navigation_dialog(app: &mut App, ctx: &egui::Context) {
+    let target_index = app.editor_state.pending_image_index;
+    let browser_exit = app.editor_state.pending_browser_exit;
+    if target_index.is_none() && !browser_exit {
+        return;
+    }
+    egui::Window::new("Unsaved edits")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.label("This image has edits that have not been saved.");
+            ui.label("Save them first, keep editing, or explicitly discard them.");
+            ui.horizontal(|ui| {
+                if ui.button("Keep Editing").clicked() {
+                    app.editor_state.pending_image_index = None;
+                    app.editor_state.pending_browser_exit = false;
+                }
+                if browser_exit && ui.button("Browser (Keep Edits)").clicked() {
+                    app.editor_state.pending_browser_exit = false;
+                    app.mode = crate::app::Mode::Browser;
+                }
+                let discard_label = if browser_exit {
+                    "Discard and Return"
+                } else {
+                    "Discard and Open"
+                };
+                if ui.button(discard_label).clicked() {
+                    if let Some(path) = app.image_files.get(app.selected_image_index) {
+                        app.textures.pop(path.to_string_lossy().as_ref());
+                    }
+                    app.editor_state.pending_image_index = None;
+                    app.editor_state.pending_browser_exit = false;
+                    app.editor_state.discard_changes();
+                    if browser_exit {
+                        app.mode = crate::app::Mode::Browser;
+                    } else if let Some(target_index) = target_index {
+                        app.select_image(target_index);
+                    }
+                }
+            });
+        });
+}
+
+fn handle_history_shortcuts(app: &mut App, ctx: &egui::Context) {
+    if ctx.wants_keyboard_input() {
+        return;
+    }
+    let (undo_requested, redo_requested) = ctx.input(|input| {
+        let ctrl = input.modifiers.ctrl;
+        let shift = input.modifiers.shift;
+        let redo =
+            ctrl && ((shift && input.key_pressed(egui::Key::Z)) || input.key_pressed(egui::Key::Y));
+        let undo = ctrl && !shift && input.key_pressed(egui::Key::Z);
+        (undo, redo)
+    });
+    if redo_requested && app.editor_state.adjustments.is_neutral() {
+        redo(app, ctx);
+    } else if undo_requested {
+        undo(app, ctx);
     }
 }
 
@@ -525,8 +649,11 @@ fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
 }
 
 fn undo(app: &mut App, ctx: &egui::Context) {
+    if !app.editor_state.adjustments.is_neutral() {
+        reset_adjustment_preview(app, ctx);
+        return;
+    }
     if app.editor_state.undo_edit() {
-        app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
     }
 }
@@ -535,6 +662,15 @@ fn redo(app: &mut App, ctx: &egui::Context) {
     if app.editor_state.redo_edit() {
         app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
+    }
+}
+
+fn revert_all(app: &mut App, ctx: &egui::Context) {
+    app.editor_state.adjustments = ColorAdjustments::default();
+    if app.editor_state.revert_all() {
+        sync_editor_image(app, ctx);
+    } else {
+        reset_adjustment_preview(app, ctx);
     }
 }
 
@@ -629,6 +765,7 @@ fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
 }
 
 fn save_as(app: &mut App) {
+    app.editor_state.commit_adjustments();
     let img = match &app.editor_state.current_image {
         Some(i) => i.clone(),
         None => return,
@@ -650,6 +787,7 @@ fn save_as(app: &mut App) {
         app.editor_state.save_jpeg_quality,
     ) {
         Ok(()) => {
+            app.editor_state.mark_saved();
             app.scan_folder();
             // Update the filename field to reflect the saved file.
             app.editor_state.save_as_filename = filename.clone();
@@ -676,10 +814,16 @@ mod tests {
         ))
     }
 
+    fn state_with_image(image: DynamicImage) -> State {
+        let mut state = State::new();
+        state.original_image = Some(image.clone());
+        state.current_image = Some(image);
+        state
+    }
+
     #[test]
     fn test_rotate_undo_redo_restores_both_states() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(2, 3, 10));
+        let mut state = state_with_image(colored_image(2, 3, 10));
         assert!(state.apply_operation(&EditOp::Rotate90Cw));
         assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (3, 2));
         assert!(state.undo_edit());
@@ -690,8 +834,7 @@ mod tests {
 
     #[test]
     fn test_resize_undo_redo_restores_both_states() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(10, 20, 10));
+        let mut state = state_with_image(colored_image(10, 20, 10));
         assert!(state.apply_operation(&EditOp::Resize {
             width: 4,
             height: 6,
@@ -706,8 +849,7 @@ mod tests {
 
     #[test]
     fn test_replacement_undo_redo_restores_pasted_pixels() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(2, 2, 10));
+        let mut state = state_with_image(colored_image(2, 2, 10));
         assert!(state.replace_image(colored_image(3, 3, 20)));
         assert!(state.undo_edit());
         assert_eq!(
@@ -733,19 +875,18 @@ mod tests {
 
     #[test]
     fn test_new_edit_after_undo_clears_redo() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(2, 3, 10));
+        let mut state = state_with_image(colored_image(2, 3, 10));
         assert!(state.apply_operation(&EditOp::Rotate90Cw));
         assert!(state.undo_edit());
-        assert!(!state.redo_stack.is_empty());
+        assert!(state.can_redo());
         assert!(state.apply_operation(&EditOp::FlipHorizontal));
-        assert!(state.redo_stack.is_empty());
+        assert!(!state.can_redo());
+        assert_eq!(state.history.len(), 1);
     }
 
     #[test]
     fn test_adjustment_undo_redo_restores_pixels() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(1, 1, 40));
+        let mut state = state_with_image(colored_image(1, 1, 40));
         assert!(state.apply_operation(&EditOp::Adjust(ColorAdjustments {
             brightness: 20.0,
             ..Default::default()
@@ -780,13 +921,64 @@ mod tests {
     }
 
     #[test]
-    fn test_history_limit_keeps_newest_usable_state() {
-        let mut state = State::new();
-        state.current_image = Some(colored_image(1, 1, 0));
+    fn test_all_unsaved_edits_remain_undoable() {
+        let mut state = state_with_image(colored_image(1, 1, 0));
         for value in 1..=60 {
             assert!(state.replace_image(colored_image(1, 1, value)));
         }
-        assert_eq!(state.undo_stack.len(), MAX_UNDO);
+        assert_eq!(state.history.len(), 60);
+        for _ in 0..60 {
+            assert!(state.undo_edit());
+        }
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            0
+        );
+        assert!(!state.can_undo());
+        assert!(state.can_redo());
+    }
+
+    #[test]
+    fn test_revert_all_preserves_redo_history() {
+        let mut state = state_with_image(colored_image(1, 1, 10));
+        assert!(state.replace_image(colored_image(1, 1, 20)));
+        assert!(state.replace_image(colored_image(1, 1, 30)));
+        assert!(state.revert_all());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            10
+        );
+        assert!(state.redo_edit());
+        assert!(state.redo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            30
+        );
+    }
+
+    #[test]
+    fn test_pending_adjustment_is_committed_as_one_undoable_edit() {
+        let mut state = state_with_image(colored_image(1, 1, 40));
+        state.adjustments.brightness = 20.0;
+        assert!(state.has_unsaved_changes());
+        assert!(state.commit_adjustments());
+        assert!(state.adjustments.is_neutral());
+        assert_eq!(state.history_index, 1);
         assert!(state.undo_edit());
         assert_eq!(
             state
@@ -795,7 +987,39 @@ mod tests {
                 .unwrap()
                 .to_rgba8()
                 .get_pixel(0, 0)[0],
-            59
+            40
+        );
+    }
+
+    #[test]
+    fn test_discard_and_save_update_the_session_baseline() {
+        let mut state = state_with_image(colored_image(1, 1, 10));
+        assert!(state.replace_image(colored_image(1, 1, 20)));
+        state.discard_changes();
+        assert!(!state.has_unsaved_changes());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            10
+        );
+
+        assert!(state.replace_image(colored_image(1, 1, 30)));
+        state.mark_saved();
+        assert!(!state.has_unsaved_changes());
+        assert!(state.replace_image(colored_image(1, 1, 40)));
+        assert!(state.undo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            30
         );
     }
 }
