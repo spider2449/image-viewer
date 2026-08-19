@@ -113,7 +113,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         .selectable_label(app.editor_state.visible, "Edit")
                         .clicked()
                     {
-                        app.editor_state.visible = !app.editor_state.visible;
+                        if app.editor_state.visible {
+                            crate::editor::discard_adjustment_preview(app);
+                            app.editor_state.visible = false;
+                        } else {
+                            app.editor_state.visible = true;
+                        }
                         if app.editor_state.visible && app.editor_state.current_image.is_none() {
                             app.editor_state.load_image(&path);
                         }

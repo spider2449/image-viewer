@@ -7,7 +7,7 @@ A cross-platform desktop image viewer and editor built with [egui](https://githu
 - **Browser mode** — folder tree navigation with thumbnail grid or list view
 - **Viewer mode** — zoom, pan, fit-to-window, 1:1, and fullscreen display
 - **Slideshow** — automatic playback with configurable interval
-- **Editor** — crop, rotate/flip, resize, undo/redo, save as
+- **Editor** — live exposure/color adjustments, auto contrast, effects, blur/sharpen, crop, transforms, advanced resize, undo/redo, and save as
 - **Batch processing** — background conversion, rename, and resize with progress and cancellation
 - **Recoverable deletion** — confirm folder deletion and move items to the recycle bin/trash
 - **EXIF metadata** — view camera settings and file info
@@ -16,7 +16,7 @@ A cross-platform desktop image viewer and editor built with [egui](https://githu
 
 ## Supported Formats
 
-PNG, JPEG, BMP, GIF, TIFF, WebP
+PNG, JPEG, BMP, GIF, TIFF, WebP, OpenEXR
 
 ## Installation
 
@@ -83,8 +83,8 @@ src/
     grid.rs            — thumbnail grid + list view
     files.rs           — file operations (rename, delete, copy, open)
   editor/
-    mod.rs             — right panel: undo/redo, crop, rotate, resize, save
-    operations.rs      — EditOp enum and apply dispatch
+    mod.rs             — right panel, live previews, history, and save workflow
+    operations.rs      — color, effect, transform, and resize processing
   batch/
     mod.rs             — batch processing UI and orchestration
     operations.rs      — batch operation definitions

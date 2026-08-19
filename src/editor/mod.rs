@@ -3,7 +3,7 @@ pub mod operations;
 use crate::app::App;
 use eframe::egui;
 use image::{DynamicImage, GenericImageView};
-use operations::EditOp;
+use operations::{ColorAdjustments, EditOp, ResizeFilter, ResizeMode};
 use std::path::PathBuf;
 
 const MAX_UNDO: usize = 50;
@@ -20,6 +20,12 @@ pub struct State {
     pub resize_width: u32,
     pub resize_height: u32,
     pub resize_lock_aspect: bool,
+    pub resize_mode: ResizeMode,
+    pub resize_filter: ResizeFilter,
+    pub adjustments: ColorAdjustments,
+    pub blur_sigma: f32,
+    pub sharpen_sigma: f32,
+    pub sharpen_threshold: i32,
     pub save_format: &'static str,
     pub save_jpeg_quality: u8,
     pub save_as_filename: String,
@@ -38,6 +44,12 @@ impl State {
             resize_width: 0,
             resize_height: 0,
             resize_lock_aspect: true,
+            resize_mode: ResizeMode::Exact,
+            resize_filter: ResizeFilter::Lanczos3,
+            adjustments: ColorAdjustments::default(),
+            blur_sigma: 2.0,
+            sharpen_sigma: 1.0,
+            sharpen_threshold: 2,
             save_format: "png",
             save_jpeg_quality: 90,
             save_as_filename: String::new(),
@@ -50,6 +62,7 @@ impl State {
             self.current_image = Some(img);
             self.resize_width = w;
             self.resize_height = h;
+            self.adjustments = ColorAdjustments::default();
             self.undo_stack.clear();
             self.redo_stack.clear();
             self.save_as_filename = path
@@ -129,6 +142,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     }
 
     let colors = app.theme_colors();
+    let mut preview_changed = false;
 
     egui::SidePanel::right("editor_panel")
         .resizable(true)
@@ -142,18 +156,17 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             let colors = colors;
             egui::ScrollArea::vertical().show(ui, |ui| {
-                // Header
                 ui.horizontal(|ui| {
                     ui.heading("Edit");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("X").clicked() {
+                            discard_adjustment_preview(app);
                             app.editor_state.visible = false;
                         }
                     });
                 });
                 ui.separator();
 
-                // Undo/Redo
                 ui.horizontal(|ui| {
                     let can_undo = !app.editor_state.undo_stack.is_empty();
                     if ui
@@ -172,151 +185,323 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 });
 
                 ui.separator();
-
-                // Crop section
-                ui.label(egui::RichText::new("Crop").strong().color(colors.accent));
-                if ui
-                    .selectable_label(app.editor_state.crop_active, "Crop")
-                    .clicked()
-                {
-                    app.editor_state.crop_active = !app.editor_state.crop_active;
-                    if !app.editor_state.crop_active {
-                        app.editor_state.crop_start = None;
-                        app.editor_state.crop_end = None;
-                    }
-                }
-                if app.editor_state.crop_active {
-                    if ui.button("Apply Crop").clicked() {
-                        apply_crop(app, ctx);
-                    }
-                    if ui.button("Cancel Crop").clicked() {
-                        app.editor_state.crop_active = false;
-                        app.editor_state.crop_start = None;
-                        app.editor_state.crop_end = None;
-                    }
-                }
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Adjustments")
+                        .strong()
+                        .color(colors.accent),
+                )
+                .default_open(true)
+                .show(ui, |ui| {
+                    preview_changed |= adjustment_controls(ui, &mut app.editor_state.adjustments);
+                    ui.horizontal(|ui| {
+                        let can_apply = !app.editor_state.adjustments.is_neutral();
+                        if ui
+                            .add_enabled(can_apply, egui::Button::new("Apply"))
+                            .clicked()
+                        {
+                            let adjustments = app.editor_state.adjustments;
+                            apply_op(app, ctx, EditOp::Adjust(adjustments));
+                        }
+                        if ui
+                            .add_enabled(can_apply, egui::Button::new("Reset"))
+                            .clicked()
+                        {
+                            reset_adjustment_preview(app, ctx);
+                        }
+                    });
+                });
 
                 ui.separator();
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Quick Effects")
+                        .strong()
+                        .color(colors.accent),
+                )
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for (label, op) in [
+                            ("Auto Contrast", EditOp::AutoContrast),
+                            ("Grayscale", EditOp::Grayscale),
+                            ("Sepia", EditOp::Sepia),
+                            ("Invert", EditOp::Invert),
+                        ] {
+                            if ui.button(label).clicked() {
+                                apply_op(app, ctx, op);
+                            }
+                        }
+                    });
+                    ui.add(
+                        egui::Slider::new(&mut app.editor_state.blur_sigma, 0.1..=20.0)
+                            .text("Blur radius"),
+                    );
+                    if ui.button("Apply Blur").clicked() {
+                        apply_op(app, ctx, EditOp::Blur(app.editor_state.blur_sigma));
+                    }
+                    ui.add(
+                        egui::Slider::new(&mut app.editor_state.sharpen_sigma, 0.1..=10.0)
+                            .text("Sharpen radius"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut app.editor_state.sharpen_threshold, 0..=50)
+                            .text("Threshold"),
+                    );
+                    if ui.button("Apply Sharpen").clicked() {
+                        apply_op(
+                            app,
+                            ctx,
+                            EditOp::Sharpen {
+                                sigma: app.editor_state.sharpen_sigma,
+                                threshold: app.editor_state.sharpen_threshold,
+                            },
+                        );
+                    }
+                });
 
-                // Transform section
-                ui.label(
+                ui.separator();
+                egui::CollapsingHeader::new(
                     egui::RichText::new("Transform")
                         .strong()
                         .color(colors.accent),
-                );
-                if ui.button("Rotate 90\u{00B0} CW").clicked() {
-                    apply_op(app, ctx, EditOp::Rotate90Cw);
-                }
-                if ui.button("Rotate 90\u{00B0} CCW").clicked() {
-                    apply_op(app, ctx, EditOp::Rotate90Ccw);
-                }
-                if ui.button("Rotate 180\u{00B0}").clicked() {
-                    apply_op(app, ctx, EditOp::Rotate180);
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Flip H").clicked() {
-                        apply_op(app, ctx, EditOp::FlipHorizontal);
-                    }
-                    if ui.button("Flip V").clicked() {
-                        apply_op(app, ctx, EditOp::FlipVertical);
-                    }
+                )
+                .default_open(true)
+                .show(ui, |ui| transform_controls(app, ctx, ui));
+
+                ui.separator();
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Resize").strong().color(colors.accent),
+                )
+                .default_open(true)
+                .show(ui, |ui| {
+                    resize_controls(app, ctx, ui, colors.text_secondary)
                 });
 
                 ui.separator();
-
-                // Resize section
-                ui.label(egui::RichText::new("Resize").strong().color(colors.accent));
-                let aspect = app.editor_state.current_image.as_ref().map(|img| {
-                    let (iw, ih) = img.dimensions();
-                    (iw.max(1), ih.max(1))
-                });
-                ui.horizontal(|ui| {
-                    ui.colored_label(colors.text_secondary, "W:");
-                    let mut w = app.editor_state.resize_width as f32;
-                    if ui
-                        .add(egui::DragValue::new(&mut w).range(1..=16384))
-                        .changed()
-                    {
-                        app.editor_state.resize_width = w as u32;
-                        if app.editor_state.resize_lock_aspect {
-                            if let Some((iw, ih)) = aspect {
-                                app.editor_state.resize_height =
-                                    ((w * ih as f32 / iw as f32).round() as u32).max(1);
-                            }
-                        }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.colored_label(colors.text_secondary, "H:");
-                    let mut h = app.editor_state.resize_height as f32;
-                    if ui
-                        .add(egui::DragValue::new(&mut h).range(1..=16384))
-                        .changed()
-                    {
-                        app.editor_state.resize_height = h as u32;
-                        if app.editor_state.resize_lock_aspect {
-                            if let Some((iw, ih)) = aspect {
-                                app.editor_state.resize_width =
-                                    ((h * iw as f32 / ih as f32).round() as u32).max(1);
-                            }
-                        }
-                    }
-                });
-                ui.checkbox(
-                    &mut app.editor_state.resize_lock_aspect,
-                    "Lock aspect ratio",
-                );
-                if ui.button("Apply").clicked() {
-                    apply_op(
-                        app,
-                        ctx,
-                        EditOp::Resize {
-                            width: app.editor_state.resize_width,
-                            height: app.editor_state.resize_height,
-                        },
-                    );
-                }
-
-                ui.separator();
-                // Paste from clipboard
-                ui.label(
+                egui::CollapsingHeader::new(
                     egui::RichText::new("Clipboard")
                         .strong()
                         .color(colors.accent),
-                );
-                if ui.button("Paste").clicked() {
-                    paste_from_clipboard(app, ctx);
-                }
+                )
+                .show(ui, |ui| {
+                    if ui.button("Paste Image").clicked() {
+                        paste_from_clipboard(app, ctx);
+                    }
+                });
 
                 ui.separator();
-
-                // Save As section
-                ui.label(egui::RichText::new("Save As").strong().color(colors.accent));
-                egui::ComboBox::new("save_format", "")
-                    .selected_text(app.editor_state.save_format)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut app.editor_state.save_format, "png", "PNG");
-                        ui.selectable_value(&mut app.editor_state.save_format, "jpeg", "JPEG");
-                        ui.selectable_value(&mut app.editor_state.save_format, "bmp", "BMP");
-                        ui.selectable_value(&mut app.editor_state.save_format, "webp", "WEBP");
-                    });
-                if app.editor_state.save_format == "jpeg" {
-                    ui.add(
-                        egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100)
-                            .text("Quality"),
-                    );
-                }
-                // Filename input
-                egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
-                    .hint_text("Enter filename")
-                    .show(ui);
-                if ui.button("Save As...").clicked()
-                    && !app.editor_state.save_as_filename.is_empty()
-                {
-                    save_as(app);
-                }
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Save As").strong().color(colors.accent),
+                )
+                .default_open(true)
+                .show(ui, |ui| save_controls(app, ui));
             });
         });
+
+    if preview_changed {
+        preview_adjustments(app, ctx);
+    }
+}
+
+fn adjustment_controls(ui: &mut egui::Ui, adjustments: &mut ColorAdjustments) -> bool {
+    let mut changed = false;
+    changed |= ui
+        .add(
+            egui::Slider::new(&mut adjustments.exposure, -4.0..=4.0)
+                .text("Exposure")
+                .suffix(" EV"),
+        )
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.brightness, -100.0..=100.0).text("Brightness"))
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.contrast, -100.0..=100.0).text("Contrast"))
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.saturation, -100.0..=100.0).text("Saturation"))
+        .changed();
+    changed |= ui
+        .add(
+            egui::Slider::new(&mut adjustments.hue, -180..=180)
+                .text("Hue")
+                .suffix("\u{00B0}"),
+        )
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.temperature, -100.0..=100.0).text("Temperature"))
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.tint, -100.0..=100.0).text("Tint"))
+        .changed();
+    changed |= ui
+        .add(egui::Slider::new(&mut adjustments.gamma, 0.1..=3.0).text("Gamma"))
+        .changed();
+    changed
+}
+
+fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Rotate 90\u{00B0} CW").clicked() {
+            apply_op(app, ctx, EditOp::Rotate90Cw);
+        }
+        if ui.button("Rotate 90\u{00B0} CCW").clicked() {
+            apply_op(app, ctx, EditOp::Rotate90Ccw);
+        }
+        if ui.button("Rotate 180\u{00B0}").clicked() {
+            apply_op(app, ctx, EditOp::Rotate180);
+        }
+        if ui.button("Flip H").clicked() {
+            apply_op(app, ctx, EditOp::FlipHorizontal);
+        }
+        if ui.button("Flip V").clicked() {
+            apply_op(app, ctx, EditOp::FlipVertical);
+        }
+    });
+    if ui
+        .selectable_label(app.editor_state.crop_active, "Crop Tool")
+        .clicked()
+    {
+        app.editor_state.crop_active = !app.editor_state.crop_active;
+        if !app.editor_state.crop_active {
+            app.editor_state.crop_start = None;
+            app.editor_state.crop_end = None;
+        }
+    }
+    if app.editor_state.crop_active {
+        ui.label("Drag a rectangle over the image.");
+        ui.horizontal(|ui| {
+            if ui.button("Apply Crop").clicked() {
+                apply_crop(app, ctx);
+            }
+            if ui.button("Cancel").clicked() {
+                app.editor_state.crop_active = false;
+                app.editor_state.crop_start = None;
+                app.editor_state.crop_end = None;
+            }
+        });
+    }
+}
+
+fn resize_controls(
+    app: &mut App,
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    secondary: egui::Color32,
+) {
+    let source_size = app
+        .editor_state
+        .current_image
+        .as_ref()
+        .map(|image| image.dimensions());
+    ui.horizontal_wrapped(|ui| {
+        for percent in [25, 50, 100, 200] {
+            if ui.button(format!("{percent}%")).clicked() {
+                if let Some((width, height)) = source_size {
+                    app.editor_state.resize_width = ((width as u64 * percent) / 100).max(1) as u32;
+                    app.editor_state.resize_height =
+                        ((height as u64 * percent) / 100).max(1) as u32;
+                }
+            }
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        for (label, width, height) in [("HD", 1280, 720), ("FHD", 1920, 1080), ("4K", 3840, 2160)] {
+            if ui
+                .button(label)
+                .on_hover_text(format!("{width} x {height}"))
+                .clicked()
+            {
+                app.editor_state.resize_width = width;
+                app.editor_state.resize_height = height;
+            }
+        }
+    });
+
+    let aspect = source_size.map(|(width, height)| (width.max(1), height.max(1)));
+    ui.horizontal(|ui| {
+        ui.colored_label(secondary, "Width:");
+        let changed = ui
+            .add(egui::DragValue::new(&mut app.editor_state.resize_width).range(1..=32768))
+            .changed();
+        if changed && app.editor_state.resize_lock_aspect {
+            if let Some((width, height)) = aspect {
+                app.editor_state.resize_height =
+                    ((app.editor_state.resize_width as f64 * height as f64 / width as f64).round()
+                        as u32)
+                        .max(1);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.colored_label(secondary, "Height:");
+        let changed = ui
+            .add(egui::DragValue::new(&mut app.editor_state.resize_height).range(1..=32768))
+            .changed();
+        if changed && app.editor_state.resize_lock_aspect {
+            if let Some((width, height)) = aspect {
+                app.editor_state.resize_width =
+                    ((app.editor_state.resize_height as f64 * width as f64 / height as f64).round()
+                        as u32)
+                        .max(1);
+            }
+        }
+    });
+    ui.checkbox(
+        &mut app.editor_state.resize_lock_aspect,
+        "Lock source aspect ratio",
+    );
+    egui::ComboBox::from_label("Mode")
+        .selected_text(app.editor_state.resize_mode.label())
+        .show_ui(ui, |ui| {
+            for mode in [ResizeMode::Exact, ResizeMode::Fit, ResizeMode::Fill] {
+                ui.selectable_value(&mut app.editor_state.resize_mode, mode, mode.label());
+            }
+        });
+    egui::ComboBox::from_label("Resampling")
+        .selected_text(app.editor_state.resize_filter.label())
+        .show_ui(ui, |ui| {
+            for filter in [
+                ResizeFilter::Nearest,
+                ResizeFilter::Triangle,
+                ResizeFilter::CatmullRom,
+                ResizeFilter::Gaussian,
+                ResizeFilter::Lanczos3,
+            ] {
+                ui.selectable_value(&mut app.editor_state.resize_filter, filter, filter.label());
+            }
+        });
+    if ui.button("Apply Resize").clicked() {
+        apply_op(
+            app,
+            ctx,
+            EditOp::Resize {
+                width: app.editor_state.resize_width,
+                height: app.editor_state.resize_height,
+                mode: app.editor_state.resize_mode,
+                filter: app.editor_state.resize_filter,
+            },
+        );
+    }
+}
+
+fn save_controls(app: &mut App, ui: &mut egui::Ui) {
+    egui::ComboBox::new("save_format", "")
+        .selected_text(app.editor_state.save_format.to_uppercase())
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut app.editor_state.save_format, "png", "PNG");
+            ui.selectable_value(&mut app.editor_state.save_format, "jpeg", "JPEG");
+            ui.selectable_value(&mut app.editor_state.save_format, "bmp", "BMP");
+            ui.selectable_value(&mut app.editor_state.save_format, "webp", "WEBP");
+        });
+    if app.editor_state.save_format == "jpeg" {
+        ui.add(egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100).text("Quality"));
+    }
+    egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
+        .hint_text("Enter filename")
+        .show(ui);
+    if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
+        save_as(app);
+    }
 }
 
 fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage) {
@@ -334,19 +519,48 @@ fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage)
 
 fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
     if app.editor_state.apply_operation(&op) {
+        app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
     }
 }
 
 fn undo(app: &mut App, ctx: &egui::Context) {
     if app.editor_state.undo_edit() {
+        app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
     }
 }
 
 fn redo(app: &mut App, ctx: &egui::Context) {
     if app.editor_state.redo_edit() {
+        app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
+    }
+}
+
+fn preview_adjustments(app: &mut App, ctx: &egui::Context) {
+    let Some(image) = app.editor_state.current_image.as_ref() else {
+        return;
+    };
+    let preview = EditOp::Adjust(app.editor_state.adjustments).apply(image);
+    upload_texture(app, ctx, &preview);
+}
+
+fn reset_adjustment_preview(app: &mut App, ctx: &egui::Context) {
+    app.editor_state.adjustments = ColorAdjustments::default();
+    let Some(image) = app.editor_state.current_image.clone() else {
+        return;
+    };
+    upload_texture(app, ctx, &image);
+}
+
+pub(crate) fn discard_adjustment_preview(app: &mut App) {
+    if app.editor_state.adjustments.is_neutral() {
+        return;
+    }
+    app.editor_state.adjustments = ColorAdjustments::default();
+    if let Some(path) = app.image_files.get(app.selected_image_index) {
+        app.textures.pop(path.to_string_lossy().as_ref());
     }
 }
 
@@ -409,6 +623,7 @@ fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
         None => return,
     };
     if app.editor_state.replace_image(img) {
+        app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
     }
 }
@@ -479,7 +694,9 @@ mod tests {
         state.current_image = Some(colored_image(10, 20, 10));
         assert!(state.apply_operation(&EditOp::Resize {
             width: 4,
-            height: 6
+            height: 6,
+            mode: ResizeMode::Exact,
+            filter: ResizeFilter::Lanczos3,
         }));
         assert!(state.undo_edit());
         assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (10, 20));
@@ -523,6 +740,43 @@ mod tests {
         assert!(!state.redo_stack.is_empty());
         assert!(state.apply_operation(&EditOp::FlipHorizontal));
         assert!(state.redo_stack.is_empty());
+    }
+
+    #[test]
+    fn test_adjustment_undo_redo_restores_pixels() {
+        let mut state = State::new();
+        state.current_image = Some(colored_image(1, 1, 40));
+        assert!(state.apply_operation(&EditOp::Adjust(ColorAdjustments {
+            brightness: 20.0,
+            ..Default::default()
+        })));
+        let adjusted = state
+            .current_image
+            .as_ref()
+            .unwrap()
+            .to_rgba8()
+            .get_pixel(0, 0)[0];
+        assert_ne!(adjusted, 40);
+        assert!(state.undo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            40
+        );
+        assert!(state.redo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            adjusted
+        );
     }
 
     #[test]

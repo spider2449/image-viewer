@@ -182,6 +182,12 @@ impl App {
         if index >= self.image_files.len() {
             return;
         }
+        if !self.editor_state.adjustments.is_neutral() {
+            if let Some(path) = self.image_files.get(self.selected_image_index) {
+                self.textures.pop(path.to_string_lossy().as_ref());
+            }
+            self.editor_state.adjustments = crate::editor::operations::ColorAdjustments::default();
+        }
         self.selected_image_index = index;
         self.viewer_state.zoom_mode = viewer::ZoomMode::Fit;
         self.viewer_state.pan_offset = egui::Vec2::ZERO;
