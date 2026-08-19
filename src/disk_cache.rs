@@ -19,8 +19,18 @@ impl DiskCache {
 
     fn cache_path(&self, path: &Path, max_size: u32) -> Option<PathBuf> {
         let hash = self.path_hash(path);
-        let mtime = Self::get_mtime(path)?;
-        Some(self.dir.join(format!("{hash}.{mtime}.{max_size}.jpg")))
+        let metadata = fs::metadata(path).ok()?;
+        let modified_ns = metadata
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        let length = metadata.len();
+        Some(
+            self.dir
+                .join(format!("{hash}.{modified_ns}.{length}.{max_size}.jpg")),
+        )
     }
 
     pub fn lookup(&self, path: &Path, max_size: u32) -> Option<ColorImage> {
@@ -38,24 +48,39 @@ impl DiskCache {
         let img = image::load_from_memory(&bytes).ok()?;
         let rgba = img.to_rgba8();
         let (w, h) = img.dimensions();
-        Some(ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba))
+        Some(ColorImage::from_rgba_unmultiplied(
+            [w as usize, h as usize],
+            &rgba,
+        ))
     }
 
     pub fn store(&self, path: &Path, max_size: u32, image: &ColorImage) {
         self.delete_old_entries(path);
         let Some(cache_path) = self.cache_path(path, max_size) else {
-            eprintln!("[disk_cache] cache_path returned None (mtime or hash issue?) for {:?}", path);
+            eprintln!(
+                "[disk_cache] cache_path returned None (mtime or hash issue?) for {:?}",
+                path
+            );
             return;
         };
         let w = image.size[0] as u32;
         let h = image.size[1] as u32;
         if w == 0 || h == 0 {
-            eprintln!("[disk_cache] skipping zero-dimension thumbnail for {:?}", path);
+            eprintln!(
+                "[disk_cache] skipping zero-dimension thumbnail for {:?}",
+                path
+            );
             return;
         }
         let raw: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
         let Some(rgba) = image::RgbaImage::from_raw(w, h, raw) else {
-            eprintln!("[disk_cache] from_raw failed: {}x{} pixels={} path={:?}", w, h, image.pixels.len(), path);
+            eprintln!(
+                "[disk_cache] from_raw failed: {}x{} pixels={} path={:?}",
+                w,
+                h,
+                image.pixels.len(),
+                path
+            );
             return;
         };
         let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
@@ -103,11 +128,6 @@ impl DiskCache {
         path.hash(&mut hasher);
         format!("{:016x}", hasher.finish())
     }
-
-    fn get_mtime(path: &Path) -> Option<u64> {
-        let meta = fs::metadata(path).ok()?;
-        meta.modified().ok()?.duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs())
-    }
 }
 
 #[cfg(test)]
@@ -150,11 +170,15 @@ mod tests {
         // Create a minimal valid PNG
         let mut png_data = Vec::new();
         png_data.extend_from_slice(b"\x89PNG\r\n\x1a\n");
-        png_data.extend_from_slice(&[0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 144, 119, 83, 222]);
+        png_data.extend_from_slice(&[
+            0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 144, 119, 83, 222,
+        ]);
         // CRC for IHDR (1x1 RGB)
         png_data.extend_from_slice(&[0x4d, 0x92, 0x7c, 0xd2]);
         // IDAT chunk: compressed 1 pixel red
-        let raw = [0x78, 0x01, 0x62, 0x60, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01];
+        let raw = [
+            0x78, 0x01, 0x62, 0x60, 0x60, 0x60, 0x60, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01,
+        ];
         png_data.extend_from_slice(&[0, 0, 0, raw.len() as u8, 73, 68, 65, 84]);
         png_data.extend_from_slice(&raw);
         // CRC placeholder — just skip for test
@@ -162,10 +186,12 @@ mod tests {
         fs::write(&src, &png_data).ok();
 
         // Create a simple 2x2 red ColorImage
-        let ci = ColorImage::from_rgba_unmultiplied([2, 2], &[
-            255, 0, 0, 255, 255, 0, 0, 255,
-            255, 0, 0, 255, 255, 0, 0, 255,
-        ]);
+        let ci = ColorImage::from_rgba_unmultiplied(
+            [2, 2],
+            &[
+                255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+            ],
+        );
 
         cache.store(&src, 200, &ci);
         let loaded = cache.lookup(&src, 200);
@@ -197,6 +223,57 @@ mod tests {
         // Cache file should be gone
         assert!(!cache_path.exists());
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_source_length_changes_cache_path_without_waiting_a_second() {
+        let dir = std::env::temp_dir().join("thumb_cache_test_length_signature");
+        let _ = fs::remove_dir_all(&dir);
+        let cache = DiskCache::new(dir.clone());
+        let src = dir.join("source.png");
+        fs::write(&src, b"short").unwrap();
+        let first = cache.cache_path(&src, 200).unwrap();
+        fs::write(&src, b"a different and longer source").unwrap();
+        let second = cache.cache_path(&src, 200).unwrap();
+        assert_ne!(first, second);
+        assert!(cache.lookup(&src, 200).is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_requested_sizes_have_distinct_cache_paths() {
+        let dir = std::env::temp_dir().join("thumb_cache_test_sizes");
+        let _ = fs::remove_dir_all(&dir);
+        let cache = DiskCache::new(dir.clone());
+        let src = dir.join("source.png");
+        fs::write(&src, b"source").unwrap();
+        assert_ne!(cache.cache_path(&src, 200), cache.cache_path(&src, 400));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_storing_new_signature_removes_old_source_entry() {
+        let dir = std::env::temp_dir().join("thumb_cache_test_replacement");
+        let _ = fs::remove_dir_all(&dir);
+        let cache = DiskCache::new(dir.clone());
+        let src = dir.join("source.png");
+        fs::write(&src, b"first").unwrap();
+        let red = ColorImage::from_rgba_unmultiplied([1, 1], &[255, 0, 0, 255]);
+        cache.store(&src, 200, &red);
+        let old_path = cache.cache_path(&src, 200).unwrap();
+        assert!(old_path.exists());
+
+        fs::write(&src, b"second version with another length").unwrap();
+        assert!(cache.lookup(&src, 200).is_none());
+        let blue = ColorImage::from_rgba_unmultiplied([1, 1], &[0, 0, 255, 255]);
+        cache.store(&src, 200, &blue);
+        let new_path = cache.cache_path(&src, 200).unwrap();
+        assert_ne!(old_path, new_path);
+        assert!(!old_path.exists());
+        assert!(new_path.exists());
+        let loaded = cache.lookup(&src, 200).unwrap();
+        assert!(loaded.pixels[0].b() > loaded.pixels[0].r());
         let _ = fs::remove_dir_all(&dir);
     }
 }

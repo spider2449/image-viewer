@@ -11,8 +11,8 @@ const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024; // 64 MB byte budget for undo hi
 
 pub struct State {
     pub visible: bool,
-    pub undo_stack: Vec<(EditOp, DynamicImage)>,
-    pub redo_stack: Vec<(EditOp, DynamicImage)>,
+    pub undo_stack: Vec<DynamicImage>,
+    pub redo_stack: Vec<DynamicImage>,
     pub current_image: Option<DynamicImage>,
     pub crop_active: bool,
     pub crop_start: Option<egui::Pos2>,
@@ -59,6 +59,68 @@ impl State {
                 .to_string();
         }
     }
+
+    fn image_bytes(image: &DynamicImage) -> usize {
+        image.as_bytes().len()
+    }
+
+    fn push_bounded(stack: &mut Vec<DynamicImage>, image: DynamicImage) {
+        stack.push(image);
+        while stack.len() > MAX_UNDO {
+            stack.remove(0);
+        }
+        let mut total: usize = stack.iter().map(Self::image_bytes).sum();
+        while total > MAX_UNDO_BYTES && stack.len() > 1 {
+            total -= Self::image_bytes(&stack.remove(0));
+        }
+    }
+
+    fn install_edit(&mut self, result: DynamicImage) -> bool {
+        let Some(current) = self.current_image.take() else {
+            return false;
+        };
+        self.current_image = Some(result);
+        Self::push_bounded(&mut self.undo_stack, current);
+        self.redo_stack.clear();
+        true
+    }
+
+    fn apply_operation(&mut self, op: &EditOp) -> bool {
+        let Some(current) = self.current_image.as_ref() else {
+            return false;
+        };
+        self.install_edit(op.apply(current))
+    }
+
+    fn replace_image(&mut self, image: DynamicImage) -> bool {
+        self.install_edit(image)
+    }
+
+    fn undo_edit(&mut self) -> bool {
+        if self.current_image.is_none() {
+            return false;
+        }
+        let Some(previous) = self.undo_stack.pop() else {
+            return false;
+        };
+        let current = self.current_image.take().unwrap();
+        Self::push_bounded(&mut self.redo_stack, current);
+        self.current_image = Some(previous);
+        true
+    }
+
+    fn redo_edit(&mut self) -> bool {
+        if self.current_image.is_none() {
+            return false;
+        }
+        let Some(next) = self.redo_stack.pop() else {
+            return false;
+        };
+        let current = self.current_image.take().unwrap();
+        Self::push_bounded(&mut self.undo_stack, current);
+        self.current_image = Some(next);
+        true
+    }
 }
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
@@ -94,11 +156,17 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 // Undo/Redo
                 ui.horizontal(|ui| {
                     let can_undo = !app.editor_state.undo_stack.is_empty();
-                    if ui.add_enabled(can_undo, egui::Button::new("\u{21A9} Undo")).clicked() {
+                    if ui
+                        .add_enabled(can_undo, egui::Button::new("\u{21A9} Undo"))
+                        .clicked()
+                    {
                         undo(app, ctx);
                     }
                     let can_redo = !app.editor_state.redo_stack.is_empty();
-                    if ui.add_enabled(can_redo, egui::Button::new("\u{21AA} Redo")).clicked() {
+                    if ui
+                        .add_enabled(can_redo, egui::Button::new("\u{21AA} Redo"))
+                        .clicked()
+                    {
                         redo(app, ctx);
                     }
                 });
@@ -107,7 +175,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
                 // Crop section
                 ui.label(egui::RichText::new("Crop").strong().color(colors.accent));
-                if ui.selectable_label(app.editor_state.crop_active, "Crop").clicked() {
+                if ui
+                    .selectable_label(app.editor_state.crop_active, "Crop")
+                    .clicked()
+                {
                     app.editor_state.crop_active = !app.editor_state.crop_active;
                     if !app.editor_state.crop_active {
                         app.editor_state.crop_start = None;
@@ -128,7 +199,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.separator();
 
                 // Transform section
-                ui.label(egui::RichText::new("Transform").strong().color(colors.accent));
+                ui.label(
+                    egui::RichText::new("Transform")
+                        .strong()
+                        .color(colors.accent),
+                );
                 if ui.button("Rotate 90\u{00B0} CW").clicked() {
                     apply_op(app, ctx, EditOp::Rotate90Cw);
                 }
@@ -158,7 +233,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.colored_label(colors.text_secondary, "W:");
                     let mut w = app.editor_state.resize_width as f32;
-                    if ui.add(egui::DragValue::new(&mut w).range(1..=16384)).changed() {
+                    if ui
+                        .add(egui::DragValue::new(&mut w).range(1..=16384))
+                        .changed()
+                    {
                         app.editor_state.resize_width = w as u32;
                         if app.editor_state.resize_lock_aspect {
                             if let Some((iw, ih)) = aspect {
@@ -171,7 +249,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.colored_label(colors.text_secondary, "H:");
                     let mut h = app.editor_state.resize_height as f32;
-                    if ui.add(egui::DragValue::new(&mut h).range(1..=16384)).changed() {
+                    if ui
+                        .add(egui::DragValue::new(&mut h).range(1..=16384))
+                        .changed()
+                    {
                         app.editor_state.resize_height = h as u32;
                         if app.editor_state.resize_lock_aspect {
                             if let Some((iw, ih)) = aspect {
@@ -181,23 +262,33 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         }
                     }
                 });
-                ui.checkbox(&mut app.editor_state.resize_lock_aspect, "Lock aspect ratio");
+                ui.checkbox(
+                    &mut app.editor_state.resize_lock_aspect,
+                    "Lock aspect ratio",
+                );
                 if ui.button("Apply").clicked() {
-                    apply_op(app, ctx, EditOp::Resize {
-                        width: app.editor_state.resize_width,
-                        height: app.editor_state.resize_height,
-                    });
+                    apply_op(
+                        app,
+                        ctx,
+                        EditOp::Resize {
+                            width: app.editor_state.resize_width,
+                            height: app.editor_state.resize_height,
+                        },
+                    );
                 }
 
                 ui.separator();
                 // Paste from clipboard
-                ui.label(egui::RichText::new("Clipboard").strong().color(colors.accent));
+                ui.label(
+                    egui::RichText::new("Clipboard")
+                        .strong()
+                        .color(colors.accent),
+                );
                 if ui.button("Paste").clicked() {
                     paste_from_clipboard(app, ctx);
                 }
 
                 ui.separator();
-
 
                 // Save As section
                 ui.label(egui::RichText::new("Save As").strong().color(colors.accent));
@@ -210,13 +301,18 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         ui.selectable_value(&mut app.editor_state.save_format, "webp", "WEBP");
                     });
                 if app.editor_state.save_format == "jpeg" {
-                    ui.add(egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100).text("Quality"));
+                    ui.add(
+                        egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100)
+                            .text("Quality"),
+                    );
                 }
                 // Filename input
                 egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
                     .hint_text("Enter filename")
                     .show(ui);
-                if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
+                if ui.button("Save As...").clicked()
+                    && !app.editor_state.save_as_filename.is_empty()
+                {
                     save_as(app);
                 }
             });
@@ -237,56 +333,31 @@ fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage)
 }
 
 fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
-    let img = match &app.editor_state.current_image {
-        Some(i) => i.clone(),
-        None => return,
-    };
-
-    if app.editor_state.undo_stack.len() >= MAX_UNDO {
-        app.editor_state.undo_stack.remove(0);
+    if app.editor_state.apply_operation(&op) {
+        sync_editor_image(app, ctx);
     }
-    app.editor_state.undo_stack.push((op.clone(), img.clone()));
-    // Byte-budget cap: evict oldest entries if total RGBA bytes exceed budget.
-    let mut total_bytes: usize = app.editor_state.undo_stack.iter()
-        .map(|(_, i)| (i.width() * i.height() * 4) as usize)
-        .sum();
-    while total_bytes > MAX_UNDO_BYTES && !app.editor_state.undo_stack.is_empty() {
-        let (_, oldest) = app.editor_state.undo_stack.remove(0);
-        total_bytes -= (oldest.width() * oldest.height() * 4) as usize;
-    }
-    app.editor_state.redo_stack.clear();
-
-    let result = op.apply(&img);
-    let (w, h) = result.dimensions();
-    app.editor_state.resize_width = w;
-    app.editor_state.resize_height = h;
-
-    upload_texture(app, ctx, &result);
-    app.editor_state.current_image = Some(result);
 }
 
 fn undo(app: &mut App, ctx: &egui::Context) {
-    if let Some((op, prev_img)) = app.editor_state.undo_stack.pop() {
-        let (w, h) = prev_img.dimensions();
-        app.editor_state.redo_stack.push((op, prev_img.clone()));
-        app.editor_state.resize_width = w;
-        app.editor_state.resize_height = h;
-
-        upload_texture(app, ctx, &prev_img);
-        app.editor_state.current_image = Some(prev_img);
+    if app.editor_state.undo_edit() {
+        sync_editor_image(app, ctx);
     }
 }
 
 fn redo(app: &mut App, ctx: &egui::Context) {
-    if let Some((op, next_img)) = app.editor_state.redo_stack.pop() {
-        let (w, h) = next_img.dimensions();
-        app.editor_state.undo_stack.push((op, next_img.clone()));
-        app.editor_state.resize_width = w;
-        app.editor_state.resize_height = h;
-
-        upload_texture(app, ctx, &next_img);
-        app.editor_state.current_image = Some(next_img);
+    if app.editor_state.redo_edit() {
+        sync_editor_image(app, ctx);
     }
+}
+
+fn sync_editor_image(app: &mut App, ctx: &egui::Context) {
+    let Some(image) = app.editor_state.current_image.clone() else {
+        return;
+    };
+    let (w, h) = image.dimensions();
+    app.editor_state.resize_width = w;
+    app.editor_state.resize_height = h;
+    upload_texture(app, ctx, &image);
 }
 
 fn apply_crop(app: &mut App, ctx: &egui::Context) {
@@ -296,7 +367,16 @@ fn apply_crop(app: &mut App, ctx: &egui::Context) {
         let w = (start.x - end.x).abs() as u32;
         let h = (start.y - end.y).abs() as u32;
         if w > 0 && h > 0 {
-            apply_op(app, ctx, EditOp::Crop { x, y, width: w, height: h });
+            apply_op(
+                app,
+                ctx,
+                EditOp::Crop {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                },
+            );
         }
         app.editor_state.crop_active = false;
         app.editor_state.crop_start = None;
@@ -319,28 +399,18 @@ fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
             return;
         }
     };
-    let rgba = image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes.to_vec());
+    let rgba = image::RgbaImage::from_raw(
+        image.width as u32,
+        image.height as u32,
+        image.bytes.to_vec(),
+    );
     let img = match rgba {
         Some(rgba_img) => image::DynamicImage::ImageRgba8(rgba_img),
         None => return,
     };
-    // Push current image to undo stack before replacing.
-    if let Some(ref current) = app.editor_state.current_image {
-        if app.editor_state.undo_stack.len() >= MAX_UNDO {
-            app.editor_state.undo_stack.remove(0);
-        }
-        app.editor_state.undo_stack.push((EditOp::NoOp, current.clone()));
+    if app.editor_state.replace_image(img) {
+        sync_editor_image(app, ctx);
     }
-
-    app.editor_state.current_image = Some(img.clone());
-    let (w, h) = img.dimensions();
-    app.editor_state.resize_width = w;
-    app.editor_state.resize_height = h;
-    upload_texture(app, ctx, &img);
-
-
-
-    app.editor_state.redo_stack.clear();
 }
 
 fn save_as(app: &mut App) {
@@ -358,7 +428,12 @@ fn save_as(app: &mut App) {
     let new_ext = crate::format_ext::format_to_extension(save_format);
     let filename = app.editor_state.save_as_filename.clone();
     let new_name = base_path.with_file_name(format!("{}.{}", filename, new_ext));
-    match crate::format_ext::save_image(&img, &new_name, save_format, app.editor_state.save_jpeg_quality) {
+    match crate::format_ext::save_image(
+        &img,
+        &new_name,
+        save_format,
+        app.editor_state.save_jpeg_quality,
+    ) {
         Ok(()) => {
             app.scan_folder();
             // Update the filename field to reflect the saved file.
@@ -378,50 +453,95 @@ mod tests {
     use image::DynamicImage;
     use image::GenericImageView;
 
-    #[test]
-    fn test_undo_pops_correct_entry() {
-        let mut state = State::new();
-        let img = DynamicImage::new_rgba8(10, 10);
-        state.current_image = Some(img.clone());
-
-        // Simulate an edit by pushing to undo stack directly.
-        state.undo_stack.push((EditOp::Rotate90Cw, img.clone()));
-
-        // Pop and verify the undone image matches.
-        let (op, prev_img) = state.undo_stack.pop().unwrap();
-        assert_eq!(op, EditOp::Rotate90Cw);
-        assert_eq!(prev_img.dimensions(), (10, 10));
+    fn colored_image(width: u32, height: u32, value: u8) -> DynamicImage {
+        DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba([value, 0, 0, 255]),
+        ))
     }
 
     #[test]
-    fn test_redo_pops_correct_entry() {
+    fn test_rotate_undo_redo_restores_both_states() {
         let mut state = State::new();
-        let img = DynamicImage::new_rgba8(10, 10);
-
-        state.undo_stack.push((EditOp::FlipHorizontal, img.clone()));
-
-        // Simulate undo: move from undo to redo.
-        if let Some(entry) = state.undo_stack.pop() {
-            state.redo_stack.push(entry);
-        }
-
-        let (op, next_img) = state.redo_stack.pop().unwrap();
-        assert_eq!(op, EditOp::FlipHorizontal);
-        assert_eq!(next_img.dimensions(), (10, 10));
+        state.current_image = Some(colored_image(2, 3, 10));
+        assert!(state.apply_operation(&EditOp::Rotate90Cw));
+        assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (3, 2));
+        assert!(state.undo_edit());
+        assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (2, 3));
+        assert!(state.redo_edit());
+        assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (3, 2));
     }
 
     #[test]
-    fn test_redo_clears_on_new_edit() {
+    fn test_resize_undo_redo_restores_both_states() {
         let mut state = State::new();
-        let img = DynamicImage::new_rgba8(10, 10);
+        state.current_image = Some(colored_image(10, 20, 10));
+        assert!(state.apply_operation(&EditOp::Resize {
+            width: 4,
+            height: 6
+        }));
+        assert!(state.undo_edit());
+        assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (10, 20));
+        assert!(state.redo_edit());
+        assert_eq!(state.current_image.as_ref().unwrap().dimensions(), (4, 6));
+    }
 
-        state.undo_stack.push((EditOp::Rotate90Cw, img.clone()));
-        if let Some(entry) = state.undo_stack.pop() {
-            state.redo_stack.push(entry);
-        }
+    #[test]
+    fn test_replacement_undo_redo_restores_pasted_pixels() {
+        let mut state = State::new();
+        state.current_image = Some(colored_image(2, 2, 10));
+        assert!(state.replace_image(colored_image(3, 3, 20)));
+        assert!(state.undo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            10
+        );
+        assert!(state.redo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            20
+        );
+    }
 
-        // New edit should clear redo stack.
-        state.redo_stack.clear();
+    #[test]
+    fn test_new_edit_after_undo_clears_redo() {
+        let mut state = State::new();
+        state.current_image = Some(colored_image(2, 3, 10));
+        assert!(state.apply_operation(&EditOp::Rotate90Cw));
+        assert!(state.undo_edit());
+        assert!(!state.redo_stack.is_empty());
+        assert!(state.apply_operation(&EditOp::FlipHorizontal));
         assert!(state.redo_stack.is_empty());
+    }
+
+    #[test]
+    fn test_history_limit_keeps_newest_usable_state() {
+        let mut state = State::new();
+        state.current_image = Some(colored_image(1, 1, 0));
+        for value in 1..=60 {
+            assert!(state.replace_image(colored_image(1, 1, value)));
+        }
+        assert_eq!(state.undo_stack.len(), MAX_UNDO);
+        assert!(state.undo_edit());
+        assert_eq!(
+            state
+                .current_image
+                .as_ref()
+                .unwrap()
+                .to_rgba8()
+                .get_pixel(0, 0)[0],
+            59
+        );
     }
 }

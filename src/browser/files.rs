@@ -16,7 +16,7 @@ pub fn execute(op: FileOp) -> Result<(), String> {
             std::fs::rename(&old, &new_path).map_err(|e| format!("Rename failed: {e}"))
         }
         FileOp::Delete { path } => {
-            trash::delete(&path).map_err(|e| format!("Delete failed: {e}"))
+            delete_to_trash(&path)
         }
         FileOp::Copy { path } => {
             if let Some(name) = path.file_name() {
@@ -35,6 +35,10 @@ pub fn execute(op: FileOp) -> Result<(), String> {
             open::that(&path).map_err(|e| format!("Open failed: {e}"))
         }
     }
+}
+
+pub fn delete_to_trash(path: &std::path::Path) -> Result<(), String> {
+    trash::delete(path).map_err(|e| format!("Delete failed: {e}"))
 }
 
 #[cfg(test)]

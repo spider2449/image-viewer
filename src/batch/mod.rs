@@ -2,14 +2,31 @@ pub mod operations;
 
 use crate::app::App;
 use eframe::egui;
+use operations::Operation;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum BatchMode {
     Convert,
     Rename,
     Resize,
+}
+
+#[derive(Debug)]
+enum Event {
+    Started {
+        total: usize,
+    },
+    FileFinished {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
+    Finished {
+        cancelled: bool,
+    },
 }
 
 pub struct State {
@@ -29,6 +46,8 @@ pub struct State {
     pub progress_current: usize,
     pub progress_total: usize,
     pub log: Vec<String>,
+    receiver: Option<mpsc::Receiver<Event>>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl State {
@@ -49,6 +68,8 @@ impl State {
             progress_current: 0,
             progress_total: 0,
             log: Vec::new(),
+            receiver: None,
+            cancel: None,
         }
     }
 
@@ -57,13 +78,105 @@ impl State {
         self.checked = files.iter().cloned().collect();
         self.select_all = true;
         self.log.clear();
-        self.running = false;
+    }
+
+    fn start(&mut self, files: Vec<PathBuf>, operation: Operation) {
+        if self.running {
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
+        self.running = true;
+        self.progress_current = 0;
+        self.progress_total = files.len();
+        self.log.clear();
+        self.receiver = Some(receiver);
+        self.cancel = Some(cancel);
+        std::thread::spawn(move || run_job(files, operation, worker_cancel, sender));
+    }
+
+    fn request_cancel(&self) {
+        if let Some(cancel) = &self.cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn poll_events(&mut self) -> bool {
+        let mut rescan = false;
+        let mut disconnected = false;
+        if let Some(receiver) = &self.receiver {
+            loop {
+                match receiver.try_recv() {
+                    Ok(Event::Started { total }) => self.progress_total = total,
+                    Ok(Event::FileFinished { path, result }) => {
+                        self.progress_current += 1;
+                        if let Err(error) = result {
+                            self.log.push(format!("{}: {error}", path.display()));
+                        }
+                    }
+                    Ok(Event::Finished { cancelled }) => {
+                        self.running = false;
+                        if cancelled {
+                            self.log
+                                .push("Cancelled before starting the next file.".to_string());
+                        }
+                        rescan = true;
+                        disconnected = true;
+                        break;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        if self.running {
+                            self.log
+                                .push("Batch worker disconnected unexpectedly.".to_string());
+                            self.running = false;
+                        }
+                        rescan = true;
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if disconnected {
+            self.receiver = None;
+            self.cancel = None;
+        }
+        rescan
     }
 }
 
+fn run_job(
+    files: Vec<PathBuf>,
+    operation: Operation,
+    cancel: Arc<AtomicBool>,
+    sender: mpsc::Sender<Event>,
+) {
+    let _ = sender.send(Event::Started { total: files.len() });
+    let mut cancelled = false;
+    for (index, path) in files.into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            break;
+        }
+        let result = operations::process_file(&operation, &path, index);
+        if sender.send(Event::FileFinished { path, result }).is_err() {
+            return;
+        }
+    }
+    let _ = sender.send(Event::Finished { cancelled });
+}
+
 pub fn show(app: &mut App, ctx: &egui::Context) {
+    if app.batch_state.poll_events() {
+        app.scan_folder();
+    }
     if !app.batch_state.visible {
         return;
+    }
+    if app.batch_state.running {
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }
 
     let colors = app.theme_colors();
@@ -74,98 +187,91 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .resizable(false)
         .default_size([600.0, 500.0])
         .show(ctx, |ui| {
-            let colors = colors;
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut app.batch_state.mode, BatchMode::Convert, "Convert");
-                ui.selectable_value(&mut app.batch_state.mode, BatchMode::Rename, "Rename");
-                ui.selectable_value(&mut app.batch_state.mode, BatchMode::Resize, "Resize");
+            let running = app.batch_state.running;
+            ui.add_enabled_ui(!running, |ui| {
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut app.batch_state.mode, BatchMode::Convert, "Convert");
+                    ui.selectable_value(&mut app.batch_state.mode, BatchMode::Rename, "Rename");
+                    ui.selectable_value(&mut app.batch_state.mode, BatchMode::Resize, "Resize");
+                });
             });
             ui.separator();
 
-            let files: Vec<PathBuf> = app.image_files.clone();
-            if app.batch_state.checked.is_empty() && app.batch_state.select_all {
-                for f in &files {
-                    app.batch_state.checked.insert(f.clone());
-                }
+            let files = app.image_files.clone();
+            if app.batch_state.checked.is_empty() && app.batch_state.select_all && !running {
+                app.batch_state.checked.extend(files.iter().cloned());
             }
-
-            ui.horizontal(|ui| {
-                if ui.link("Select All").clicked() {
-                    for f in &files {
-                        app.batch_state.checked.insert(f.clone());
+            ui.add_enabled_ui(!running, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.link("Select All").clicked() {
+                        app.batch_state.checked.extend(files.iter().cloned());
+                        app.batch_state.select_all = true;
                     }
-                    app.batch_state.select_all = true;
-                }
-                ui.separator();
-                if ui.link("Unselect All").clicked() {
-                    app.batch_state.checked.clear();
-                    app.batch_state.select_all = false;
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let selected = app.image_files.iter()
-                        .filter(|p| app.batch_state.checked.contains(*p))
-                        .count();
-                    ui.colored_label(colors.text_secondary, format!("{selected}/{} selected", files.len()));
+                    ui.separator();
+                    if ui.link("Unselect All").clicked() {
+                        app.batch_state.checked.clear();
+                        app.batch_state.select_all = false;
+                    }
                 });
-            });
-
-            egui::ScrollArea::vertical()
-                .max_height(200.0)
-                .show(ui, |ui| {
-                    for path in &files {
-                        let name = path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let checked = app.batch_state.checked.contains(path);
-                        let mut new_checked = checked;
-                        ui.checkbox(&mut new_checked, &name);
-                        if new_checked != checked {
-                            if new_checked {
-                                app.batch_state.checked.insert(path.clone());
-                            } else {
-                                app.batch_state.checked.remove(path);
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for path in &files {
+                            let name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy())
+                                .unwrap_or_default();
+                            let mut checked = app.batch_state.checked.contains(path);
+                            if ui.checkbox(&mut checked, name).changed() {
+                                if checked {
+                                    app.batch_state.checked.insert(path.clone());
+                                } else {
+                                    app.batch_state.checked.remove(path);
+                                }
                             }
                         }
-                    }
-                });
+                    });
+            });
 
-            ui.separator();
-
-            let selected: Vec<PathBuf> = app.image_files.iter()
-                .filter(|p| app.batch_state.checked.contains(*p))
-                .cloned()
+            let selected: Vec<PathBuf> = files
+                .into_iter()
+                .filter(|p| app.batch_state.checked.contains(p))
                 .collect();
-
-            match app.batch_state.mode {
+            ui.colored_label(
+                colors.text_secondary,
+                format!("{}/{} selected", selected.len(), app.image_files.len()),
+            );
+            ui.separator();
+            let mut operation = None;
+            ui.add_enabled_ui(!running, |ui| match app.batch_state.mode {
                 BatchMode::Convert => {
                     egui::ComboBox::new("batch_format", "Format")
                         .selected_text(app.batch_state.convert_format)
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut app.batch_state.convert_format, "png", "PNG");
-                            ui.selectable_value(&mut app.batch_state.convert_format, "jpeg", "JPEG");
+                            ui.selectable_value(
+                                &mut app.batch_state.convert_format,
+                                "jpeg",
+                                "JPEG",
+                            );
                             ui.selectable_value(&mut app.batch_state.convert_format, "bmp", "BMP");
-                            ui.selectable_value(&mut app.batch_state.convert_format, "webp", "WEBP");
+                            ui.selectable_value(
+                                &mut app.batch_state.convert_format,
+                                "webp",
+                                "WEBP",
+                            );
                         });
                     if app.batch_state.convert_format == "jpeg" {
-                        ui.add(egui::Slider::new(&mut app.batch_state.jpeg_quality, 1..=100).text("Quality"));
+                        ui.add(
+                            egui::Slider::new(&mut app.batch_state.jpeg_quality, 1..=100)
+                                .text("Quality"),
+                        );
                     }
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(colors.accent)
-                    )).clicked() {
-                        app.batch_state.running = true;
-                        app.batch_state.progress_total = selected.len();
-                        app.batch_state.progress_current = 0;
-                        let fmt = app.batch_state.convert_format;
-                        let q = app.batch_state.jpeg_quality;
-                        let result = operations::batch_convert(&selected, fmt, q);
-                        app.batch_state.log.clear();
-                        if let Err(errs) = result {
-                            for e in errs {
-                                app.batch_state.log.push(e);
-                            }
-                        }
-                        app.batch_state.running = false;
-                        app.scan_folder();
+                    if ui.button("Apply").clicked() {
+                        operation = Some(Operation::Convert {
+                            format: app.batch_state.convert_format.to_string(),
+                            jpeg_quality: app.batch_state.jpeg_quality,
+                        });
                     }
                 }
                 BatchMode::Rename => {
@@ -173,65 +279,51 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         ui.label("Pattern:");
                         ui.text_edit_singleline(&mut app.batch_state.rename_pattern);
                     });
-                    if !selected.is_empty() {
-                        let preview_name = app.batch_state.rename_pattern
-                            .replace("{n}", "001")
-                            .replace("{name}", &selected[0].file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_default());
-                        ui.label(format!("Preview: {}", preview_name));
-                    }
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(colors.accent)
-                    )).clicked() {
-                        app.batch_state.running = true;
-                        let pattern = app.batch_state.rename_pattern.clone();
-                        let result = operations::batch_rename(&selected, &pattern);
-                        app.batch_state.log.clear();
-                        if let Err(errs) = result {
-                            for e in errs {
-                                app.batch_state.log.push(e);
-                            }
-                        }
-                        app.batch_state.running = false;
-                        app.scan_folder();
+                    if ui.button("Apply").clicked() {
+                        operation = Some(Operation::Rename {
+                            pattern: app.batch_state.rename_pattern.clone(),
+                        });
                     }
                 }
                 BatchMode::Resize => {
-                    ui.horizontal(|ui| {
-                        ui.label("W:");
-                        let mut w = app.batch_state.resize_width as f32;
-                        if ui.add(egui::DragValue::new(&mut w).range(1..=16384)).changed() {
-                            app.batch_state.resize_width = w as u32;
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("H:");
-                        let mut h = app.batch_state.resize_height as f32;
-                        if ui.add(egui::DragValue::new(&mut h).range(1..=16384)).changed() {
-                            app.batch_state.resize_height = h as u32;
-                        }
-                    });
+                    ui.add(
+                        egui::DragValue::new(&mut app.batch_state.resize_width)
+                            .range(1..=16384)
+                            .prefix("W: "),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut app.batch_state.resize_height)
+                            .range(1..=16384)
+                            .prefix("H: "),
+                    );
                     ui.checkbox(&mut app.batch_state.resize_lock_aspect, "Lock aspect ratio");
-                    if ui.add_enabled(!app.batch_state.running, egui::Button::new(
-                        egui::RichText::new("Apply").color(colors.accent)
-                    )).clicked() {
-                        app.batch_state.running = true;
-                        let w = app.batch_state.resize_width;
-                        let h = app.batch_state.resize_height;
-                        let result = operations::batch_resize(&selected, w, h, app.batch_state.resize_lock_aspect);
-                        app.batch_state.log.clear();
-                        if let Err(errs) = result {
-                            for e in errs {
-                                app.batch_state.log.push(e);
-                            }
-                        }
-                        app.batch_state.running = false;
-                        app.scan_folder();
+                    if ui.button("Apply").clicked() {
+                        operation = Some(Operation::Resize {
+                            width: app.batch_state.resize_width,
+                            height: app.batch_state.resize_height,
+                            lock_aspect: app.batch_state.resize_lock_aspect,
+                        });
                     }
                 }
+            });
+            if let Some(operation) = operation {
+                app.batch_state.start(selected, operation);
             }
 
+            if app.batch_state.running {
+                let fraction = if app.batch_state.progress_total == 0 {
+                    0.0
+                } else {
+                    app.batch_state.progress_current as f32 / app.batch_state.progress_total as f32
+                };
+                ui.add(egui::ProgressBar::new(fraction).text(format!(
+                    "{} / {}",
+                    app.batch_state.progress_current, app.batch_state.progress_total
+                )));
+                if ui.button("Cancel after current file").clicked() {
+                    app.batch_state.request_cancel();
+                }
+            }
             if !app.batch_state.log.is_empty() {
                 ui.separator();
                 egui::ScrollArea::vertical()
@@ -244,8 +336,100 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     });
             }
         });
-
-    if !open {
+    if !open && !app.batch_state.running {
         app.batch_state.visible = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collect_events(files: Vec<PathBuf>, cancel: Arc<AtomicBool>) -> Vec<Event> {
+        let (sender, receiver) = mpsc::channel();
+        run_job(
+            files,
+            Operation::Convert {
+                format: "png".to_string(),
+                jpeg_quality: 90,
+            },
+            cancel,
+            sender,
+        );
+        receiver.into_iter().collect()
+    }
+
+    #[test]
+    fn test_empty_job_starts_and_finishes() {
+        let events = collect_events(Vec::new(), Arc::new(AtomicBool::new(false)));
+        assert!(matches!(
+            events.as_slice(),
+            [
+                Event::Started { total: 0 },
+                Event::Finished { cancelled: false }
+            ]
+        ));
+    }
+
+    #[test]
+    fn test_mixed_results_emit_one_event_per_file_and_finish() {
+        let dir = std::env::temp_dir().join("batch_event_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let valid = dir.join("valid.jpg");
+        image::DynamicImage::new_rgb8(2, 2).save(&valid).unwrap();
+        let missing = dir.join("missing.jpg");
+        let events = collect_events(vec![valid, missing], Arc::new(AtomicBool::new(false)));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::FileFinished { .. }))
+                .count(),
+            2
+        );
+        assert!(matches!(
+            events.last(),
+            Some(Event::Finished { cancelled: false })
+        ));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::FileFinished { result: Err(_), .. })));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_pre_cancelled_job_stops_before_first_file() {
+        let events = collect_events(
+            vec![PathBuf::from("never.png")],
+            Arc::new(AtomicBool::new(true)),
+        );
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, Event::FileFinished { .. })));
+        assert!(matches!(
+            events.last(),
+            Some(Event::Finished { cancelled: true })
+        ));
+    }
+
+
+    #[test]
+    fn test_ui_state_stops_running_after_worker_finishes() {
+        let mut state = State::new();
+        state.start(
+            Vec::new(),
+            Operation::Convert {
+                format: "png".to_string(),
+                jpeg_quality: 90,
+            },
+        );
+        for _ in 0..100 {
+            state.poll_events();
+            if !state.running {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(!state.running);
     }
 }

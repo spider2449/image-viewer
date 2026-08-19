@@ -171,16 +171,7 @@ fn show_node(
                 label.context_menu(|ui| {
                     if ui.button("Delete folder").clicked() {
                         ui.close_menu();
-                        let path = node.path.clone();
-                        let _ = std::fs::remove_dir_all(&path);
-                        app.browser_state.tree_nodes.clear();
-                        if app.current_folder.as_ref().is_some_and(|f| f == &node.path) {
-                            app.current_folder = None;
-                            app.image_files.clear();
-                            app.textures.clear();
-                            app.browser_state.thumbnails.clear();
-                            app.browser_state.thumb_textures.clear();
-                        }
+                        app.browser_state.request_delete(node.path.clone());
                     }
                 });
             }

@@ -1,5 +1,10 @@
 use image::{DynamicImage, GenericImageView, ImageFormat};
-use std::path::Path;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn format_to_extension(format: &str) -> &'static str {
     match format {
@@ -42,7 +47,30 @@ fn to_8bit_dynamic(img: &DynamicImage) -> DynamicImage {
     }
 }
 
-pub fn save_image(
+fn unique_sidecar_path(path: &Path, role: &str) -> Result<PathBuf, String> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("image");
+    for _ in 0..100 {
+        let sequence = SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(
+            ".{name}.{role}.{}.{}",
+            std::process::id(),
+            sequence
+        ));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "Could not allocate a temporary path for {}",
+        path.display()
+    ))
+}
+
+fn encode_image(
     img: &DynamicImage,
     path: &Path,
     format: &str,
@@ -60,11 +88,63 @@ pub fn save_image(
                 .encode(&rgb, w, h, image::ExtendedColorType::Rgb8)
                 .map_err(|e| e.to_string())
         }
-        "png" => img.save_with_format(path, ImageFormat::Png).map_err(|e| e.to_string()),
-        "bmp" => img.save_with_format(path, ImageFormat::Bmp).map_err(|e| e.to_string()),
-        "webp" => img.save_with_format(path, ImageFormat::WebP).map_err(|e| e.to_string()),
+        "png" => img
+            .save_with_format(path, ImageFormat::Png)
+            .map_err(|e| e.to_string()),
+        "bmp" => img
+            .save_with_format(path, ImageFormat::Bmp)
+            .map_err(|e| e.to_string()),
+        "webp" => img
+            .save_with_format(path, ImageFormat::WebP)
+            .map_err(|e| e.to_string()),
         _ => Err(format!("Unknown format: {format}")),
     }
+}
+
+fn replace_completed_file<F>(
+    temporary: &Path,
+    destination: &Path,
+    backup: &Path,
+    mut rename: F,
+) -> Result<(), String>
+where
+    F: FnMut(&Path, &Path) -> io::Result<()>,
+{
+    if !destination.exists() {
+        return rename(temporary, destination).map_err(|e| e.to_string());
+    }
+
+    rename(destination, backup).map_err(|e| e.to_string())?;
+    if let Err(replace_error) = rename(temporary, destination) {
+        return match rename(backup, destination) {
+            Ok(()) => Err(format!("Replacement failed: {replace_error}")),
+            Err(restore_error) => Err(format!(
+                "Replacement failed: {replace_error}; restoring the original also failed: {restore_error}"
+            )),
+        };
+    }
+    fs::remove_file(backup).map_err(|e| format!("Saved image but could not remove backup: {e}"))
+}
+
+pub fn save_image(
+    img: &DynamicImage,
+    path: &Path,
+    format: &str,
+    jpeg_quality: u8,
+) -> Result<(), String> {
+    let temporary = unique_sidecar_path(path, "tmp")?;
+    let backup = unique_sidecar_path(path, "bak")?;
+
+    if let Err(error) = encode_image(img, &temporary, format, jpeg_quality) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+
+    let result = replace_completed_file(&temporary, path, &backup, |from, to| fs::rename(from, to));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -107,14 +187,41 @@ mod tests {
         let result = save_image(&img, &dst, "jpeg", 90);
         assert!(result.is_ok(), "rgba->jpeg must succeed: {result:?}");
         assert!(dst.exists());
-        assert!(image::open(&dst).is_ok());
+        let decoded = image::open(&dst).unwrap();
+        assert_eq!(decoded.dimensions(), (10, 10));
+        assert_eq!(decoded.color(), image::ColorType::Rgb8);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+
+    #[test]
+    fn test_jpeg_quality_changes_encoded_output() {
+        let dir = std::env::temp_dir().join("save_image_test_jpeg_quality");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("out.jpg");
+        let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(64, 64, |x, y| {
+            image::Rgba([x as u8 * 3, y as u8 * 3, (x ^ y) as u8 * 3, 128])
+        }));
+        save_image(&image, &dst, "jpeg", 10).unwrap();
+        let low_quality = std::fs::read(&dst).unwrap();
+        save_image(&image, &dst, "jpeg", 95).unwrap();
+        let high_quality = std::fs::read(&dst).unwrap();
+        assert_ne!(low_quality, high_quality);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_save_image_unknown_format_errors() {
+        let dir = std::env::temp_dir().join("save_image_test_failed_encode");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("x.zzz");
+        std::fs::write(&dst, b"original bytes").unwrap();
         let img = image::DynamicImage::new_rgba8(2, 2);
-        assert!(save_image(&img, std::path::Path::new("x.zzz"), "zzz", 90).is_err());
+        assert!(save_image(&img, &dst, "zzz", 90).is_err());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"original bytes");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -128,6 +235,52 @@ mod tests {
         let len = std::fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
         assert!(len > 0, "png file must not be empty, got {len} bytes");
         assert!(image::open(&dst).is_ok(), "saved png must be decodable");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_successful_replacement_cleans_sidecars() {
+        let dir = std::env::temp_dir().join("save_image_test_replace");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("out.png");
+        std::fs::write(&dst, b"old").unwrap();
+        let img = image::DynamicImage::new_rgba8(7, 9);
+
+        save_image(&img, &dst, "png", 90).unwrap();
+
+        assert_eq!(image::open(&dst).unwrap().dimensions(), (7, 9));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_replacement_failure_restores_original() {
+        let dir = std::env::temp_dir().join("save_image_test_restore");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst = dir.join("out.png");
+        let temporary = dir.join("temporary");
+        let backup = dir.join("backup");
+        std::fs::write(&dst, b"original").unwrap();
+        std::fs::write(&temporary, b"replacement").unwrap();
+        let mut calls = 0;
+
+        let result = replace_completed_file(&temporary, &dst, &backup, |from, to| {
+            calls += 1;
+            if calls == 2 {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "simulated failure",
+                ))
+            } else {
+                fs::rename(from, to)
+            }
+        });
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"original");
+        assert!(!backup.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
