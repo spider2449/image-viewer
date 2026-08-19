@@ -3,10 +3,17 @@ use crate::image_loader;
 use eframe::egui::{self, Color32, Vec2};
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZoomMode {
+    Fit,
+    Manual,
+}
+
 #[allow(dead_code)]
 pub struct State {
     pub zoom: f32,
     pub fit_zoom: f32,
+    pub zoom_mode: ZoomMode,
     pub pan_offset: Vec2,
     pub is_fullscreen: bool,
     pub show_info: bool,
@@ -21,6 +28,7 @@ impl State {
         Self {
             zoom: 1.0,
             fit_zoom: 1.0,
+            zoom_mode: ZoomMode::Fit,
             pan_offset: Vec2::ZERO,
             is_fullscreen: false,
             show_info: false,
@@ -54,7 +62,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 let colors = colors;
                 ui.horizontal(|ui| {
                     // Navigation group
-                    if ui.button(egui::RichText::new("\u{2190} Browser").color(colors.accent)).clicked() {
+                    if ui
+                        .button(egui::RichText::new("\u{2190} Browser").color(colors.accent))
+                        .clicked()
+                    {
                         app.mode = Mode::Browser;
                     }
                     ui.separator();
@@ -67,11 +78,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     // Zoom group
                     ui.separator();
                     if ui.button("Fit").clicked() {
-                        app.viewer_state.zoom = app.viewer_state.fit_zoom;
+                        app.viewer_state.zoom_mode = ZoomMode::Fit;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
                     if ui.button("1:1").clicked() {
                         app.viewer_state.zoom = 1.0;
+                        app.viewer_state.zoom_mode = ZoomMode::Manual;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
                     ui.colored_label(colors.text_secondary, "Zoom:");
@@ -81,6 +93,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         .changed()
                     {
                         app.viewer_state.zoom = zoom_pct as f32 / 100.0;
+                        app.viewer_state.zoom_mode = ZoomMode::Manual;
                     }
                     // Display group
                     ui.separator();
@@ -90,10 +103,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     {
                         app.viewer_state.show_info = !app.viewer_state.show_info;
                     }
-                    if ui.selectable_label(app.exif_state.visible, "Exif").clicked() {
+                    if ui
+                        .selectable_label(app.exif_state.visible, "Exif")
+                        .clicked()
+                    {
                         app.exif_state.visible = !app.exif_state.visible;
                     }
-                    if ui.selectable_label(app.editor_state.visible, "Edit").clicked() {
+                    if ui
+                        .selectable_label(app.editor_state.visible, "Edit")
+                        .clicked()
+                    {
                         app.editor_state.visible = !app.editor_state.visible;
                         if app.editor_state.visible && app.editor_state.current_image.is_none() {
                             app.editor_state.load_image(&path);
@@ -116,13 +135,15 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(colors.text_secondary, format!(
-                            "{}/{}",
-                            app.selected_image_index + 1,
-                            app.image_files.len()
-                        ));
+                        ui.colored_label(
+                            colors.text_secondary,
+                            format!("{}/{}", app.selected_image_index + 1, app.image_files.len()),
+                        );
                         if let Some(name) = path.file_name() {
-                            ui.colored_label(colors.text_secondary, name.to_string_lossy().to_string());
+                            ui.colored_label(
+                                colors.text_secondary,
+                                name.to_string_lossy().to_string(),
+                            );
                         }
                     });
                 });
@@ -142,10 +163,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     let vp_width = vp.map(|r| r.max.x).unwrap_or(800.0);
                     let painter = ui.painter();
                     painter.rect_filled(
-                        egui::Rect::from_min_size(
-                            egui::pos2(0.0, 0.0),
-                            Vec2::new(vp_width, 40.0),
-                        ),
+                        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(vp_width, 40.0)),
                         egui::CornerRadius::ZERO,
                         Color32::from_black_alpha(128),
                     );
@@ -162,7 +180,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             app.next_image();
                         }
                         if ui.button("Fit").clicked() {
-                            app.viewer_state.zoom = app.viewer_state.fit_zoom;
+                            app.viewer_state.zoom_mode = ZoomMode::Fit;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         if ui.button("ESC").clicked() {
@@ -185,8 +203,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 let z = app.viewer_state.zoom;
                 let px = app.viewer_state.pan_offset.x;
                 let py = app.viewer_state.pan_offset.y;
-                ui.colored_label(colors.text_secondary,
-                    format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0));
+                ui.colored_label(
+                    colors.text_secondary,
+                    format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0),
+                );
                 ui.separator();
                 if let Some(meta) = app.file_cache.get_or_fetch(&path) {
                     let sz = meta.len;
@@ -209,7 +229,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         // Handle keyboard
         ctx.input(|i| {
             for event in &i.events {
-                if let egui::Event::Key { key, pressed: true, .. } = event {
+                if let egui::Event::Key {
+                    key, pressed: true, ..
+                } = event
+                {
                     match key {
                         egui::Key::ArrowLeft => {
                             if !app.viewer_state.is_slideshow {
@@ -224,37 +247,33 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         egui::Key::Escape => {
                             if app.viewer_state.is_fullscreen {
                                 app.viewer_state.is_fullscreen = false;
-                                ctx.send_viewport_cmd(
-                                    egui::ViewportCommand::Fullscreen(false),
-                                );
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                             }
                         }
                         egui::Key::F11 => {
-                            app.viewer_state.is_fullscreen =
-                                !app.viewer_state.is_fullscreen;
-                            ctx.send_viewport_cmd(
-                                egui::ViewportCommand::Fullscreen(app.viewer_state.is_fullscreen),
-                            );
+                            app.viewer_state.is_fullscreen = !app.viewer_state.is_fullscreen;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
+                                app.viewer_state.is_fullscreen,
+                            ));
                         }
                         egui::Key::I => {
                             app.viewer_state.show_info = !app.viewer_state.show_info;
                         }
                         egui::Key::F => {
-                            app.viewer_state.zoom = app.viewer_state.fit_zoom;
+                            app.viewer_state.zoom_mode = ZoomMode::Fit;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         egui::Key::Num1 => {
                             app.viewer_state.zoom = 1.0;
+                            app.viewer_state.zoom_mode = ZoomMode::Manual;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         egui::Key::Space => {
-                            app.viewer_state.is_slideshow =
-                                !app.viewer_state.is_slideshow;
+                            app.viewer_state.is_slideshow = !app.viewer_state.is_slideshow;
                             app.viewer_state.slideshow_timer = 0.0;
                         }
                         egui::Key::F5 => {
-                            app.viewer_state.is_slideshow =
-                                !app.viewer_state.is_slideshow;
+                            app.viewer_state.is_slideshow = !app.viewer_state.is_slideshow;
                             app.viewer_state.slideshow_timer = 0.0;
                         }
                         _ => {}
@@ -266,9 +285,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         if app.viewer_state.is_slideshow {
             let delta = ctx.input(|i| i.unstable_dt) as f64;
             app.viewer_state.slideshow_timer += delta;
-            if app.viewer_state.slideshow_timer
-                >= app.config.slideshow_interval_secs as f64
-            {
+            if app.viewer_state.slideshow_timer >= app.config.slideshow_interval_secs as f64 {
                 app.viewer_state.slideshow_timer = 0.0;
                 if app.selected_image_index + 1 < app.image_files.len() {
                     app.next_image();
@@ -308,12 +325,11 @@ fn draw_image(
 ) {
     let colors = app.theme_colors();
     let tex_size = tex.size_vec2();
-    let zoom = app.viewer_state.zoom;
-
-    let scale = (available.x / tex_size.x).min(available.y / tex_size.y);
-    app.viewer_state.fit_zoom = scale;
-    let base_size = tex_size * scale;
-    let display_size = base_size * zoom;
+    app.viewer_state.fit_zoom = calculate_fit_zoom(tex_size, available);
+    if app.viewer_state.zoom_mode == ZoomMode::Fit {
+        app.viewer_state.zoom = app.viewer_state.fit_zoom;
+    }
+    let display_size = display_size(tex_size, app.viewer_state.zoom);
 
     let offset = Vec2::new(
         (available.x - display_size.x).max(0.0) / 2.0,
@@ -368,9 +384,9 @@ fn draw_image(
         if draw_rect.contains(pos) {
             if scroll_delta.y != 0.0 {
                 let old_zoom = app.viewer_state.zoom;
-                app.viewer_state.zoom = (app.viewer_state.zoom
-                    * (1.0 + scroll_delta.y * 0.001))
-                .clamp(0.1, 32.0);
+                app.viewer_state.zoom =
+                    (app.viewer_state.zoom * (1.0 + scroll_delta.y * 0.001)).clamp(0.1, 32.0);
+                app.viewer_state.zoom_mode = ZoomMode::Manual;
                 let ratio = app.viewer_state.zoom / old_zoom;
                 let mouse_rel = pos - draw_rect.min;
                 app.viewer_state.pan_offset =
@@ -403,9 +419,7 @@ fn draw_image(
 
     // Crop selection overlay
     if crop_active {
-        if let (Some(start), Some(end)) =
-            (app.editor_state.crop_start, app.editor_state.crop_end)
-        {
+        if let (Some(start), Some(end)) = (app.editor_state.crop_start, app.editor_state.crop_end) {
             let sel_min = image_to_screen_pos(
                 egui::pos2(start.x.min(end.x), start.y.min(end.y)),
                 draw_rect,
@@ -483,12 +497,70 @@ fn ctx_input(ctx: &egui::Context) -> (Option<egui::Pos2>, Vec2) {
 
 fn screen_to_image_pos(pos: egui::Pos2, draw_rect: egui::Rect, tex_size: Vec2) -> egui::Pos2 {
     let rel = (pos - draw_rect.min) / draw_rect.size() * tex_size;
-    egui::pos2(
-        rel.x.clamp(0.0, tex_size.x),
-        rel.y.clamp(0.0, tex_size.y),
-    )
+    egui::pos2(rel.x.clamp(0.0, tex_size.x), rel.y.clamp(0.0, tex_size.y))
 }
 
 fn image_to_screen_pos(pos: egui::Pos2, draw_rect: egui::Rect, tex_size: Vec2) -> egui::Pos2 {
     draw_rect.min + Vec2::new(pos.x / tex_size.x, pos.y / tex_size.y) * draw_rect.size()
+}
+
+fn calculate_fit_zoom(texture_size: Vec2, available: Vec2) -> f32 {
+    if texture_size.x <= 0.0 || texture_size.y <= 0.0 {
+        return 1.0;
+    }
+    (available.x / texture_size.x).min(available.y / texture_size.y)
+}
+
+fn display_size(texture_size: Vec2, zoom: f32) -> Vec2 {
+    texture_size * zoom
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_large_image_fit_uses_absolute_scale() {
+        let image = Vec2::new(4000.0, 3000.0);
+        let area = Vec2::new(1000.0, 750.0);
+        let zoom = calculate_fit_zoom(image, area);
+        assert_eq!(zoom, 0.25);
+        assert_eq!(display_size(image, zoom), area);
+    }
+
+    #[test]
+    fn test_one_to_one_uses_source_pixel_dimensions() {
+        assert_eq!(
+            display_size(Vec2::new(4000.0, 3000.0), 1.0),
+            Vec2::new(4000.0, 3000.0)
+        );
+    }
+
+    #[test]
+    fn test_fit_upscales_small_images_to_fill_available_area() {
+        assert_eq!(
+            calculate_fit_zoom(Vec2::new(400.0, 300.0), Vec2::new(800.0, 600.0)),
+            2.0
+        );
+    }
+
+    #[test]
+    fn test_viewport_resize_only_changes_fit_mode_zoom() {
+        let image = Vec2::new(4000.0, 3000.0);
+        let mut state = State::new();
+        state.fit_zoom = calculate_fit_zoom(image, Vec2::new(1000.0, 750.0));
+        if state.zoom_mode == ZoomMode::Fit {
+            state.zoom = state.fit_zoom;
+        }
+        assert_eq!(state.zoom, 0.25);
+
+        state.zoom_mode = ZoomMode::Manual;
+        state.zoom = 1.5;
+        state.fit_zoom = calculate_fit_zoom(image, Vec2::new(2000.0, 1500.0));
+        if state.zoom_mode == ZoomMode::Fit {
+            state.zoom = state.fit_zoom;
+        }
+        assert_eq!(state.fit_zoom, 0.5);
+        assert_eq!(state.zoom, 1.5);
+    }
 }

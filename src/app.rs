@@ -183,6 +183,8 @@ impl App {
             return;
         }
         self.selected_image_index = index;
+        self.viewer_state.zoom_mode = viewer::ZoomMode::Fit;
+        self.viewer_state.pan_offset = egui::Vec2::ZERO;
         if let Some(p) = self.image_files.get(index) {
             if self.editor_state.visible {
                 self.editor_state.load_image(p);

@@ -8,7 +8,8 @@ A cross-platform desktop image viewer and editor built with [egui](https://githu
 - **Viewer mode** — zoom, pan, fit-to-window, 1:1, and fullscreen display
 - **Slideshow** — automatic playback with configurable interval
 - **Editor** — crop, rotate/flip, resize, undo/redo, save as
-- **Batch processing** — apply operations to multiple images at once
+- **Batch processing** — background conversion, rename, and resize with progress and cancellation
+- **Recoverable deletion** — confirm folder deletion and move items to the recycle bin/trash
 - **EXIF metadata** — view camera settings and file info
 - **Thumbnail cache** — background threaded loading with LRU eviction
 - **CJK font detection** — auto-loads system fonts for Chinese, Japanese, Korean
@@ -28,11 +29,11 @@ The binary is at `target/release/image-viewer.exe` (Windows) or `target/release/
 ## Usage
 
 - **Browser ↔ Viewer:** Double-click a thumbnail to open, press `Esc` or click Back to return
-- **Zoom:** Scroll wheel, `Ctrl+=` / `Ctrl+-`, or buttons for Fit / 1:1
+- **Zoom:** Scroll wheel, `F` / `1`, or buttons for Fit / 1:1
 - **Pan:** Drag while zoomed in
 - **Slideshow:** Press `F5` or click Play in viewer
 - **Editor:** Click Edit in viewer to open the right-side editor panel
-- **EXIF:** Press `F2` or click Info in viewer
+- **Info:** Press `I` or click Info in viewer
 - **Fullscreen:** Press `F11`
 
 ## Controls
@@ -43,13 +44,9 @@ The binary is at `target/release/image-viewer.exe` (Windows) or `target/release/
 | `Esc` | Back to browser |
 | `F5` | Toggle slideshow |
 | `F11` | Toggle fullscreen |
-| `F2` | Toggle EXIF overlay |
-| `Ctrl+E` | Toggle editor panel |
-| `Ctrl+=` / `Ctrl+-` | Zoom in / out |
-| `Ctrl+0` | Fit to window |
-| `Ctrl+1` | 1:1 zoom |
-| `Ctrl+S` | Save (editor) |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo (editor) |
+| `I` | Toggle image info overlay |
+| `F` | Fit to window |
+| `1` | 1:1 zoom |
 
 ## Configuration
 
