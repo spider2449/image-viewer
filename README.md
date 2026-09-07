@@ -27,6 +27,12 @@ The binary is at `target/release/image-viewer.exe` (Windows) or `target/release/
 
 ## Usage
 
+- **Open from Explorer:** Associate supported image extensions with the release executable using the full command below. Windows passes the double-clicked image path as the first argument, so the app opens it directly in Viewer mode.
+
+  ```text
+  "F:\coding\rustPrj\image-viewer\target\release\image-viewer.exe" "%1"
+  ```
+
 - **Browser ↔ Viewer:** Double-click a thumbnail to open, press `Esc` or click Back to return
 - **Zoom:** Scroll wheel, `Ctrl+=` / `Ctrl+-`, or buttons for Fit / 1:1
 - **Pan:** Drag while zoomed in

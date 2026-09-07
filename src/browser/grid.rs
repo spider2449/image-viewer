@@ -72,15 +72,14 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
 
     ui.separator();
 
-    let folder_name = app
+    let folder_path = app
         .current_folder
         .as_ref()
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().to_string())
+        .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
     ui.add_space(4.0);
     ui.label(
-        egui::RichText::new(&folder_name)
+        egui::RichText::new(&folder_path)
             .size(18.0)
             .color(colors.text_primary)
             .strong(),

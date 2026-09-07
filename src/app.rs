@@ -10,7 +10,7 @@ use crate::viewer;
 use eframe::{egui, Frame};
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub enum Mode {
     Browser,
@@ -36,7 +36,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, startup_image: Option<PathBuf>) -> Self {
         let mut fonts = egui::FontDefinitions::default();
         if let Some(cjk_data) = crate::font_loader::load_cjk_font() {
             fonts.font_data.insert("cjk".to_owned(), std::sync::Arc::new(cjk_data));
@@ -74,7 +74,9 @@ impl App {
             show_about: false,
         };
 
-        if let Some(ref folder) = app.config.last_folder {
+        if let Some(image_path) = startup_image.and_then(Self::resolve_startup_image) {
+            app.open_startup_image(&image_path);
+        } else if let Some(ref folder) = app.config.last_folder {
             let p = PathBuf::from(folder);
             if p.exists() {
                 app.current_folder = Some(p);
@@ -83,6 +85,32 @@ impl App {
         }
 
         app
+    }
+
+    fn resolve_startup_image(path: PathBuf) -> Option<PathBuf> {
+        if !path.is_file() || !crate::format_ext::is_supported_extension(&path) {
+            return None;
+        }
+        std::fs::canonicalize(path).ok()
+    }
+
+    fn open_startup_image(&mut self, image_path: &Path) {
+        let Some(folder) = image_path.parent() else {
+            return;
+        };
+
+        self.current_folder = Some(folder.to_path_buf());
+        self.scan_folder();
+
+        let selected_index = self.image_files.iter().position(|path| {
+            path == image_path
+                || std::fs::canonicalize(path)
+                    .map(|canonical| canonical == image_path)
+                    .unwrap_or(false)
+        });
+        if let Some(index) = selected_index {
+            self.switch_to_viewer(index);
+        }
     }
 
     pub fn theme_colors(&self) -> crate::theme::ThemeColors {

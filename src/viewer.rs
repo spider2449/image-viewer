@@ -121,9 +121,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             app.selected_image_index + 1,
                             app.image_files.len()
                         ));
-                        if let Some(name) = path.file_name() {
-                            ui.colored_label(colors.text_secondary, name.to_string_lossy().to_string());
-                        }
                     });
                 });
             });
@@ -182,6 +179,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             let colors = colors;
             ui.horizontal(|ui| {
+                ui.colored_label(colors.text_secondary, path.to_string_lossy().to_string());
+                ui.separator();
                 let z = app.viewer_state.zoom;
                 let px = app.viewer_state.pan_offset.x;
                 let py = app.viewer_state.pan_offset.y;
