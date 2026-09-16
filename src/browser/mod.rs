@@ -18,6 +18,7 @@ pub struct State {
     pub thumbnails: LruCache<PathBuf, Option<egui::ColorImage>>,
     pub thumb_textures: LruCache<PathBuf, egui::TextureHandle>,
     pub selected_thumb: Option<usize>,
+    pub selected_folder: Option<usize>,
     pub tree_nodes: Vec<tree::TreeNode>,
     pub expanded_paths: Vec<PathBuf>,
     pub show_list_view: bool,
@@ -41,6 +42,7 @@ impl State {
             thumbnails: LruCache::new(NonZeroUsize::new(THUMBNAIL_CACHE_CAP).unwrap()),
             thumb_textures: LruCache::new(NonZeroUsize::new(512).unwrap()),
             selected_thumb: None,
+            selected_folder: None,
             tree_nodes: Vec::new(),
             expanded_paths: Vec::new(),
             show_list_view: false,
@@ -205,8 +207,10 @@ fn finish_folder_delete(app: &mut App, deleted_path: &std::path::Path) {
         app.config.last_folder = None;
         app.config.save();
         app.image_files.clear();
+        app.subfolders.clear();
         app.selected_image_index = 0;
         app.browser_state.selected_thumb = None;
+        app.browser_state.selected_folder = None;
         app.editor_state = crate::editor::State::new();
         app.exif_state = crate::exif::ExifData::new();
     }

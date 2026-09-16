@@ -1607,7 +1607,7 @@ dependencies = [
 
 [[package]]
 name = "image-viewer"
-version = "0.1.61"
+version = "0.1.62"
 dependencies = [
  "arboard",
  "eframe",

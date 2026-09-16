@@ -5,6 +5,30 @@ use std::path::PathBuf;
 const THUMB_PADDING: f32 = 8.0;
 const LABEL_HEIGHT: f32 = 30.0;
 
+struct GridLayout {
+    cols: usize,
+    gap: f32,
+    left_pad: f32,
+    grid_gap_x: f32,
+}
+
+/// Explorer-style grid metrics: full multi-row grids distribute leftover
+/// width evenly (centered); a single incomplete row left-aligns with fixed
+/// padding instead of spreading items across the whole width.
+fn compute_grid_layout(avail: f32, thumb: f32, total: usize, padding: f32) -> GridLayout {
+    let cols_by_width = ((avail + padding) / (thumb + padding)).floor().max(1.0) as usize;
+    let cols = cols_by_width.min(total.max(1));
+    if cols <= 1 {
+        let gap = ((avail - thumb) / 2.0).max(0.0);
+        GridLayout { cols, gap, left_pad: gap, grid_gap_x: padding }
+    } else if total < cols_by_width {
+        GridLayout { cols, gap: padding, left_pad: 0.0, grid_gap_x: padding }
+    } else {
+        let gap = ((avail - cols as f32 * thumb) / (cols as f32 + 1.0)).max(0.0);
+        GridLayout { cols, gap, left_pad: gap, grid_gap_x: gap }
+    }
+}
+
 pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     let colors = app.theme_colors();
     let mut size_changed = false;
@@ -66,7 +90,10 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             app.scan_folder();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.colored_label(colors.text_secondary, format!("{} files", app.image_files.len()));
+            ui.colored_label(
+                colors.text_secondary,
+                format!("{} folders, {} files", app.subfolders.len(), app.image_files.len()),
+            );
         });
     });
 
@@ -86,7 +113,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     );
     ui.add_space(8.0);
 
-    if app.image_files.is_empty() {
+    if app.image_files.is_empty() && app.subfolders.is_empty() {
         ui.allocate_space(ui.available_size());
         ui.centered_and_justified(|ui| {
             ui.colored_label(colors.text_secondary, "No files in this folder.");
@@ -122,6 +149,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
 
 fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
+    let folders: Vec<PathBuf> = app.subfolders.clone();
     let ctx = ui.ctx().clone();
     let colors = app.theme_colors();
 
@@ -130,22 +158,15 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
         .id_salt("thumb_grid_scroll")
         .show(ui, |ui| {
             // Recompute every frame so slider / Ctrl+wheel resizing recenters.
+            // Explorer-style: multi-row grids auto-spread, single row left-aligns.
             let avail = ui.available_width();
             let thumb = app.config.thumb_size;
-            let cols_by_width =
-                ((avail + THUMB_PADDING) / (thumb + THUMB_PADDING)).floor().max(1.0) as usize;
-            let cols = cols_by_width.min(paths.len().max(1));
-            // Evenly distribute leftover width into side margins + inter gaps
-            // so the whole block stays horizontally centered:
-            // avail = cols * thumb + (cols + 1) * gap  =>  gap = (avail - cols * thumb) / (cols + 1).
-            // Single column: gap doubles as the centering side margin.
-            let gap = if cols <= 1 {
-                ((avail - thumb) / 2.0).max(0.0)
-            } else {
-                ((avail - cols as f32 * thumb) / (cols as f32 + 1.0)).max(0.0)
-            };
-            let grid_gap_x = if cols <= 1 { THUMB_PADDING } else { gap };
-            let left_pad = gap;
+            let total = folders.len() + paths.len();
+            let layout = compute_grid_layout(avail, thumb, total, THUMB_PADDING);
+            let cols = layout.cols;
+            let gap = layout.gap;
+            let grid_gap_x = layout.grid_gap_x;
+            let left_pad = layout.left_pad;
 
             ui.horizontal_top(|ui| {
                 // Remove the default item spacing so left_pad is exact.
@@ -159,10 +180,86 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                 .spacing([grid_gap_x, THUMB_PADDING])
                 .min_col_width(app.config.thumb_size)
                 .show(ui, |ui| {
-                    for (i, path) in paths.iter().enumerate() {
-                        if i > 0 && i % cols == 0 {
+                    let mut pos: usize = 0;
+                    // ── Folders on top ───────────────────────
+                    for (fj, folder) in folders.iter().enumerate() {
+                        if pos > 0 && pos % cols == 0 {
                             ui.end_row();
                         }
+                        pos += 1;
+
+                        let is_selected = app.browser_state.selected_folder == Some(fj);
+                        let (rect, response) = ui.allocate_exact_size(cell_size, egui::Sense::click());
+                        let hovered = response.hovered();
+
+                        if is_selected || hovered {
+                            let shadow_offset = Vec2::new(2.0, 2.0);
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_size(rect.min + shadow_offset, cell_size),
+                                CornerRadius::same(4),
+                                Color32::from_black_alpha(60),
+                            );
+                        }
+                        if is_selected {
+                            let glow_rect = rect.expand(3.0);
+                            ui.painter().rect_filled(
+                                glow_rect,
+                                CornerRadius::same(6),
+                                Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 30),
+                            );
+                        }
+                        let card_bg = if is_selected { colors.selected_bg } else { colors.card_bg };
+                        let border_color = if is_selected || hovered { colors.accent } else { colors.border };
+                        let border_width: f32 = if is_selected { 2.0 } else { 1.0 };
+                        ui.painter().rect(
+                            rect,
+                            CornerRadius::same(4),
+                            card_bg,
+                            Stroke::new(border_width, border_color),
+                            egui::StrokeKind::Outside,
+                        );
+                        let thumb_rect = egui::Rect::from_min_size(
+                            rect.min,
+                            Vec2::new(app.config.thumb_size, app.config.thumb_size),
+                        );
+                        ui.painter().text(
+                            thumb_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            entry_glyph(true, folder),
+                            egui::FontId::proportional(40.0),
+                            colors.accent,
+                        );
+                        let name = folder
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let label_rect = egui::Rect::from_min_size(
+                            rect.min + Vec2::new(4.0, app.config.thumb_size),
+                            Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
+                        );
+                        ui.painter().text(
+                            label_rect.left_center(),
+                            egui::Align2::LEFT_CENTER,
+                            &truncate_name(&name, 18),
+                            egui::FontId::proportional(11.0),
+                            colors.text_primary,
+                        );
+                        if response.double_clicked() {
+                            let target = folder.clone();
+                            app.current_folder = Some(target);
+                            app.scan_folder();
+                            return;
+                        }
+                        if response.clicked() {
+                            app.browser_state.selected_folder = Some(fj);
+                            app.browser_state.selected_thumb = None;
+                        }
+                    }
+                    for (i, path) in paths.iter().enumerate() {
+                        if pos > 0 && pos % cols == 0 {
+                            ui.end_row();
+                        }
+                        pos += 1;
 
                         let is_selected = app.browser_state.selected_thumb == Some(i);
 
@@ -222,8 +319,8 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             ui.painter().text(
                                 thumb_rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "🗀",
-                                egui::FontId::proportional(32.0),
+                                entry_glyph(false, path),
+                                egui::FontId::proportional(28.0),
                                 colors.text_secondary,
                             );
                         } else if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
@@ -355,6 +452,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             }
                             if response.clicked() {
                                 app.browser_state.selected_thumb = Some(i);
+                                app.browser_state.selected_folder = None;
                             }
                         }
                     }
@@ -420,6 +518,7 @@ fn commit_rename(app: &mut App, path: &PathBuf) {
 
 fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
+    let folders: Vec<PathBuf> = app.subfolders.clone();
     let saved_widths = app.config.column_widths.clone();
     let colors = app.theme_colors();
 
@@ -499,12 +598,77 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
             ui.separator();
 
+            // ── Folder rows (on top) ────────────────────
+            for (fj, folder) in folders.iter().enumerate() {
+                let is_selected = app.browser_state.selected_folder == Some(fj);
+                let row_bg = if is_selected { colors.selected_bg } else { colors.card_bg };
+                let row_h = 24.0;
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::new(available, row_h), egui::Sense::click());
+                let actual_bg = if response.hovered() && !is_selected {
+                    colors.hover_bg
+                } else {
+                    row_bg
+                };
+                ui.painter().rect_filled(rect, egui::CornerRadius::same(2), actual_bg);
+                let widths = col_widths(&app.config.column_widths, rect.width(), ICON_W, MIN_W, GAP);
+                let mut x = rect.min.x;
+                let cy = rect.center().y;
+                ui.painter().text(
+                    egui::pos2(x + ICON_W / 2.0, cy),
+                    egui::Align2::CENTER_CENTER,
+                    entry_glyph(true, folder),
+                    egui::FontId::proportional(12.0),
+                    colors.accent,
+                );
+                x += ICON_W;
+                let name = folder
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let name_color = if is_selected { colors.text_primary } else { colors.text_secondary };
+                ui.painter().text(
+                    egui::pos2(x + 4.0, cy),
+                    egui::Align2::LEFT_CENTER,
+                    &name,
+                    egui::FontId::proportional(12.0),
+                    name_color,
+                );
+                x += widths.name + GAP;
+                ui.painter().text(
+                    egui::pos2(x + widths.size - 4.0, cy),
+                    egui::Align2::RIGHT_CENTER,
+                    "-",
+                    egui::FontId::proportional(12.0),
+                    colors.text_secondary,
+                );
+                x += widths.size + GAP;
+                ui.painter().text(
+                    egui::pos2(x + widths.date - 4.0, cy),
+                    egui::Align2::RIGHT_CENTER,
+                    "-",
+                    egui::FontId::proportional(12.0),
+                    colors.text_secondary,
+                );
+                if response.double_clicked() {
+                    let target = folder.clone();
+                    app.current_folder = Some(target);
+                    app.scan_folder();
+                    return;
+                }
+                if response.clicked() {
+                    app.browser_state.selected_folder = Some(fj);
+                    app.browser_state.selected_thumb = None;
+                }
+            }
+
             // ── Rows ────────────────────────────────────────
             for (i, path) in paths.iter().enumerate() {
                 let is_selected = app.browser_state.selected_thumb == Some(i);
+                let stripe = (i + folders.len()) % 2 == 0;
                 let row_bg = if is_selected {
                     colors.selected_bg
-                } else if i % 2 == 0 {
+                } else if stripe {
                     colors.panel_bg
                 } else {
                     colors.card_bg
@@ -528,13 +692,18 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 let mut x = rect.min.x;
                 let cy = rect.center().y;
 
-                // Icon
+                // Icon: image vs generic file
+                let (glyph, glyph_color) = if can_open_in_viewer(path) {
+                    ("\u{1F5BC}", colors.text_secondary)
+                } else {
+                    (entry_glyph(false, path), colors.text_secondary)
+                };
                 ui.painter().text(
                     egui::pos2(x + ICON_W / 2.0, cy),
                     egui::Align2::CENTER_CENTER,
-                    "\u{1F5BC}",
+                    glyph,
                     egui::FontId::proportional(12.0),
-                    colors.text_secondary,
+                    glyph_color,
                 );
                 x += ICON_W;
 
@@ -588,6 +757,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 }
                 if response.clicked() {
                     app.browser_state.selected_thumb = Some(i);
+                    app.browser_state.selected_folder = None;
                 }
             }
         });
@@ -672,6 +842,19 @@ fn can_open_in_viewer(path: &std::path::Path) -> bool {
     crate::format_ext::is_supported_extension(path)
 }
 
+/// Glyph for a grid/list cell that has no image thumbnail:
+/// folders get a folder glyph, non-image files get a document glyph,
+/// images return "" (thumbnail is drawn instead).
+pub fn entry_glyph(is_dir: bool, path: &std::path::Path) -> &'static str {
+    if is_dir {
+        "\u{1F4C1}" // 📁 folder — visually distinct from files
+    } else if can_open_in_viewer(path) {
+        ""
+    } else {
+        "\u{1F4C4}" // 📄 document — generic file, not a folder
+    }
+}
+
 fn truncate_name(name: &str, max_chars: usize) -> String {
     if name.chars().count() > max_chars {
         let truncated: String = name.chars().take(max_chars - 1).collect();
@@ -683,7 +866,36 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_open_in_viewer, format_size, format_timestamp, truncate_name};
+    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, format_size, format_timestamp, truncate_name};
+
+    #[test]
+    fn test_single_incomplete_row_left_aligns() {
+        // avail fits 4 thumbs but only 2 items: must left-align with fixed padding,
+        // not spread centered with a huge gap.
+        let l = compute_grid_layout(1000.0, 200.0, 2, 8.0);
+        assert_eq!(l.cols, 2);
+        assert_eq!(l.gap, 8.0);
+        assert_eq!(l.left_pad, 0.0);
+    }
+
+    #[test]
+    fn test_full_rows_keep_centered_spacing() {
+        // 10 items, avail fits 4 per row: leftover width distributes evenly.
+        let l = compute_grid_layout(1000.0, 200.0, 10, 8.0);
+        assert_eq!(l.cols, 4);
+        assert!(l.gap > 8.0);
+        assert_eq!(l.left_pad, l.gap);
+    }
+
+    #[test]
+    fn test_entry_glyph_folder_distinct_from_file() {
+        let folder = entry_glyph(true, std::path::Path::new("anything"));
+        let doc = entry_glyph(false, std::path::Path::new("a.txt"));
+        let image = entry_glyph(false, std::path::Path::new("a.jpg"));
+        assert_ne!(folder, doc, "folder and generic file must not share a glyph");
+        assert_eq!(image, "", "images render thumbnails, not a glyph");
+        assert!(!doc.is_empty());
+    }
 
     #[test]
     fn test_can_open_in_viewer_only_for_images() {

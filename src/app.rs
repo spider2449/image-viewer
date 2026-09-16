@@ -22,6 +22,7 @@ pub struct App {
     pub config: Config,
     pub current_folder: Option<PathBuf>,
     pub image_files: Vec<PathBuf>,
+    pub subfolders: Vec<PathBuf>,
     pub selected_image_index: usize,
     pub thumbnail_cache: ThumbnailCache,
     pub file_cache: FileCache,
@@ -35,17 +36,26 @@ pub struct App {
     pub show_about: bool,
 }
 
-fn collect_folder_files(folder: &std::path::Path) -> Vec<PathBuf> {
+fn collect_folder_entries(folder: &std::path::Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut dirs: Vec<PathBuf> = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(folder) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() {
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.is_file() {
                 files.push(path);
             }
         }
     }
-    files
+    dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    (dirs, files)
+}
+
+#[allow(dead_code)]
+fn collect_folder_files(folder: &std::path::Path) -> Vec<PathBuf> {
+    collect_folder_entries(folder).1
 }
 
 fn find_next_supported(files: &[PathBuf], from: usize, direction: i32) -> Option<usize> {
@@ -85,6 +95,7 @@ impl App {
             config,
             current_folder: None,
             image_files: Vec::new(),
+            subfolders: Vec::new(),
             selected_image_index: 0,
             thumbnail_cache,
             file_cache: FileCache::new(),
@@ -154,10 +165,12 @@ impl App {
         self.browser_state.thumbnails.clear();
         self.browser_state.thumb_textures.clear();
         self.browser_state.tree_nodes.clear(); // rebuild tree on next frame
+        self.subfolders.clear();
         // The old selection/rename indices refer to the pre-scan ordering and
         // are meaningless once the list is rebuilt and re-sorted. Mutation paths
         // that want to keep a selection restore it via `rescan_selecting`.
         self.browser_state.selected_thumb = None;
+        self.browser_state.selected_folder = None;
         self.browser_state.rename_target = None;
         self.browser_state.scroll_to_selected = true;
         let folder = match &self.current_folder {
@@ -169,7 +182,8 @@ impl App {
             self.config.last_folder = Some(folder_str);
             self.config.save();
         }
-        let mut files: Vec<PathBuf> = collect_folder_files(&folder);
+        let (dirs, mut files): (Vec<PathBuf>, Vec<PathBuf>) = collect_folder_entries(&folder);
+        self.subfolders = dirs;
 
         let sort_desc = self.config.sort_descending;
         match self.config.sort_by.as_str() {
@@ -221,6 +235,7 @@ impl App {
         self.scan_folder();
         self.browser_state.selected_thumb =
             keep.and_then(|p| self.image_files.iter().position(|q| *q == p));
+        self.browser_state.selected_folder = None;
     }
 
     /// Point the viewer at `index`: update the selection and refresh the
@@ -542,6 +557,32 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_collect_folder_entries_splits_dirs_on_top() {
+        let dir = std::env::temp_dir().join("collect_entries_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("b.jpg"), b"fake").unwrap();
+        std::fs::write(dir.join("a.txt"), b"fake").unwrap();
+        std::fs::create_dir_all(dir.join("zebra")).unwrap();
+        std::fs::create_dir_all(dir.join("apple")).unwrap();
+
+        let (dirs, mut files) = super::collect_folder_entries(&dir);
+        files.sort();
+        let dir_names: Vec<String> = dirs
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        let file_names: Vec<String> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        // Folders sorted by name, files contain both entries.
+        assert_eq!(dir_names, vec!["apple", "zebra"]);
+        assert_eq!(file_names, vec!["a.txt", "b.jpg"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn test_collect_folder_files_lists_all_files() {
