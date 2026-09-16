@@ -135,6 +135,7 @@ impl App {
         // that want to keep a selection restore it via `rescan_selecting`.
         self.browser_state.selected_thumb = None;
         self.browser_state.rename_target = None;
+        self.browser_state.scroll_to_selected = true;
         let folder = match &self.current_folder {
             Some(f) => f.clone(),
             None => return,
@@ -249,6 +250,7 @@ impl App {
             self.editor_state.visible = true;
             self.viewer_state.is_slideshow = false;
         } else {
+            self.browser_state.scroll_to_selected = true;
             self.mode = Mode::Browser;
         }
     }

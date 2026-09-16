@@ -383,6 +383,7 @@ fn show_unsaved_navigation_dialog(app: &mut App, ctx: &egui::Context) {
                 }
                 if browser_exit && ui.button("Browser (Keep Edits)").clicked() {
                     app.editor_state.pending_browser_exit = false;
+                    app.browser_state.scroll_to_selected = true;
                     app.mode = crate::app::Mode::Browser;
                 }
                 let discard_label = if browser_exit {
@@ -398,6 +399,7 @@ fn show_unsaved_navigation_dialog(app: &mut App, ctx: &egui::Context) {
                     app.editor_state.pending_browser_exit = false;
                     app.editor_state.discard_changes();
                     if browser_exit {
+                        app.browser_state.scroll_to_selected = true;
                         app.mode = crate::app::Mode::Browser;
                     } else if let Some(target_index) = target_index {
                         app.select_image(target_index);

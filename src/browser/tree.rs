@@ -81,12 +81,61 @@ fn has_directories(path: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
+/// Strip the Windows verbatim prefix (`\\?\`) produced by `canonicalize`
+/// so tree paths (`D:\...`) match the startup folder (`\\?\D:\...`).
+pub fn normalize_path(path: &std::path::Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Ancestors of `folder` from filesystem root down to `folder` itself,
+/// excluding entries already present in `expanded`. Pure helper so the
+/// expansion chain is unit-testable without egui state.
+pub fn missing_ancestors(
+    folder: &std::path::Path,
+    expanded: &[PathBuf],
+) -> Vec<PathBuf> {
+    let folder = normalize_path(folder);
+    let mut chain: Vec<PathBuf> = folder.ancestors().map(|p| p.to_path_buf()).collect();
+    chain.reverse();
+    chain
+        .into_iter()
+        .filter(|p| !expanded.iter().any(|e| normalize_path(e) == *p))
+        .collect()
+}
+
+/// Ensure every ancestor of the current folder is marked expanded and
+/// materialized via `expand_node`, so deep folders become visible.
+/// Idempotent: re-running with the same folder is a no-op.
+pub fn sync_tree_to_current_folder(app: &mut App) {
+    let Some(folder) = app.current_folder.clone() else {
+        return;
+    };
+    let folder = normalize_path(&folder);
+    if app.current_folder.as_ref() != Some(&folder) {
+        app.current_folder = Some(folder.clone());
+    }
+    for ancestor in missing_ancestors(&folder, &app.browser_state.expanded_paths) {
+        app.browser_state.expanded_paths.push(ancestor.clone());
+        expand_node(&mut app.browser_state.tree_nodes, &ancestor);
+    }
+}
+
 pub fn show_tree(app: &mut App, ui: &mut Ui) {
+    sync_tree_to_current_folder(app);
     let mut click_folder: Option<PathBuf> = None;
 
     for node in &app.browser_state.tree_nodes.clone() {
         show_node(app, ui, node, 0, &mut click_folder);
     }
+
+    // One-shot auto-scroll: only jump on folder change / return from viewer,
+    // otherwise the user stays in control of the tree scroll position.
+    app.browser_state.scroll_to_selected = false;
 
     if let Some(folder) = click_folder {
         app.current_folder = Some(folder);
@@ -186,9 +235,53 @@ fn show_node(
         );
     }
 
+    if is_selected && app.browser_state.scroll_to_selected {
+        ui.scroll_to_rect(frame_resp.response.rect, Some(egui::Align::Center));
+    }
+
     if expanded {
         for child in &node.children {
             show_node(app, ui, child, depth + 1, click_folder);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_missing_ancestors_returns_root_to_leaf_chain() {
+        let folder = Path::new("/tmp").join("imgview_sync").join("a").join("b");
+        let missing = missing_ancestors(&folder, &[]);
+        let expected = vec![
+            Path::new("/").to_path_buf(),
+            Path::new("/tmp").join("imgview_sync"),
+            Path::new("/tmp").join("imgview_sync").join("a"),
+            folder.clone(),
+        ];
+        // Filter expected to ancestors that are actually ancestors of folder
+        // (root handling differs per platform, so compare suffix chain).
+        assert!(missing.ends_with(&expected[1..]));
+        assert_eq!(missing.last(), Some(&folder));
+    }
+
+    #[test]
+    fn test_missing_ancestors_skips_already_expanded() {
+        let folder = Path::new("/tmp").join("imgview_sync2").join("sub");
+        let parent = Path::new("/tmp").join("imgview_sync2");
+        let missing = missing_ancestors(&folder, &[parent.clone()]);
+        assert!(!missing.contains(&parent));
+        assert_eq!(missing.last(), Some(&folder));
+    }
+
+    #[test]
+    fn test_normalize_strips_verbatim_prefix() {
+        let verbatim = Path::new(r"\\?\D:\photos\trip");
+        assert_eq!(
+            normalize_path(verbatim),
+            PathBuf::from(r"D:\photos\trip")
+        );
     }
 }
