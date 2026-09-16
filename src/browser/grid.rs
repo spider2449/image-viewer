@@ -113,19 +113,14 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         }
     }
 
-    let available_width = ui.available_width();
-    let cols = ((available_width - THUMB_PADDING) / (app.config.thumb_size + THUMB_PADDING))
-        .floor()
-        .max(1.0) as usize;
-
     if app.browser_state.show_list_view {
         show_list_view(app, ui);
     } else {
-        show_thumbnail_grid(app, ui, cols);
+        show_thumbnail_grid(app, ui);
     }
 }
 
-fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
+fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
     let paths: Vec<PathBuf> = app.image_files.clone();
     let ctx = ui.ctx().clone();
     let colors = app.theme_colors();
@@ -134,9 +129,34 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
         .auto_shrink([false, false])
         .id_salt("thumb_grid_scroll")
         .show(ui, |ui| {
+            // Recompute every frame so slider / Ctrl+wheel resizing recenters.
+            let avail = ui.available_width();
+            let thumb = app.config.thumb_size;
+            let cols_by_width =
+                ((avail + THUMB_PADDING) / (thumb + THUMB_PADDING)).floor().max(1.0) as usize;
+            let cols = cols_by_width.min(paths.len().max(1));
+            // Evenly distribute leftover width into side margins + inter gaps
+            // so the whole block stays horizontally centered:
+            // avail = cols * thumb + (cols + 1) * gap  =>  gap = (avail - cols * thumb) / (cols + 1).
+            // Single column: gap doubles as the centering side margin.
+            let gap = if cols <= 1 {
+                ((avail - thumb) / 2.0).max(0.0)
+            } else {
+                ((avail - cols as f32 * thumb) / (cols as f32 + 1.0)).max(0.0)
+            };
+            let grid_gap_x = if cols <= 1 { THUMB_PADDING } else { gap };
+            let left_pad = gap;
+
+            ui.horizontal_top(|ui| {
+                // Remove the default item spacing so left_pad is exact.
+                ui.spacing_mut().item_spacing.x = 0.0;
+                if left_pad > 0.0 {
+                    ui.add_space(left_pad);
+                }
+                ui.vertical(|ui| {
             let cell_size = Vec2::new(app.config.thumb_size, app.config.thumb_size + LABEL_HEIGHT);
             egui::Grid::new("thumb_grid")
-                .spacing([THUMB_PADDING, THUMB_PADDING])
+                .spacing([grid_gap_x, THUMB_PADDING])
                 .min_col_width(app.config.thumb_size)
                 .show(ui, |ui| {
                     for (i, path) in paths.iter().enumerate() {
@@ -327,6 +347,8 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui, cols: usize) {
                         }
                     }
                 });
+                });
+            });
         });
 }
 
