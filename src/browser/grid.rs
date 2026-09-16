@@ -89,7 +89,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     if app.image_files.is_empty() {
         ui.allocate_space(ui.available_size());
         ui.centered_and_justified(|ui| {
-            ui.colored_label(colors.text_secondary, "No images found in this folder.");
+            ui.colored_label(colors.text_secondary, "No files in this folder.");
         });
         return;
     }
@@ -218,7 +218,15 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             Vec2::new(app.config.thumb_size, app.config.thumb_size),
                         );
 
-                        if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
+                        if !can_open_in_viewer(path) {
+                            ui.painter().text(
+                                thumb_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "🗀",
+                                egui::FontId::proportional(32.0),
+                                colors.text_secondary,
+                            );
+                        } else if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
                             let tex = if let Some(t) = app.browser_state.thumb_textures.get(path) {
                                 t.clone()
                             } else {
@@ -291,7 +299,9 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         // Context menu
                         response.context_menu(|ui| {
                             if ui.button("Open").clicked() {
-                                app.switch_to_viewer(i);
+                                if can_open_in_viewer(path) {
+                                    app.switch_to_viewer(i);
+                                }
                                 ui.close_menu();
                             }
                             if ui.button("Rename").clicked() {
@@ -338,7 +348,9 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         // Selection + double-click (suppressed while renaming this cell)
                         if app.browser_state.rename_target != Some(i) {
                             if response.double_clicked() {
-                                app.switch_to_viewer(i);
+                                if can_open_in_viewer(path) {
+                                    app.switch_to_viewer(i);
+                                }
                                 return;
                             }
                             if response.clicked() {
@@ -654,6 +666,10 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+fn can_open_in_viewer(path: &std::path::Path) -> bool {
+    crate::format_ext::is_supported_extension(path)
+}
+
 fn truncate_name(name: &str, max_chars: usize) -> String {
     if name.chars().count() > max_chars {
         let truncated: String = name.chars().take(max_chars - 1).collect();
@@ -665,7 +681,15 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_size, format_timestamp, truncate_name};
+    use super::{can_open_in_viewer, format_size, format_timestamp, truncate_name};
+
+    #[test]
+    fn test_can_open_in_viewer_only_for_images() {
+        assert!(can_open_in_viewer(std::path::Path::new("a.jpg")));
+        assert!(can_open_in_viewer(std::path::Path::new("a.PNG")));
+        assert!(!can_open_in_viewer(std::path::Path::new("a.txt")));
+        assert!(!can_open_in_viewer(std::path::Path::new("noext")));
+    }
 
     #[test]
     fn test_format_timestamp_epoch() {
