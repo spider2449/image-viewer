@@ -134,7 +134,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         ui.painter().vline(
             handle_x,
             tree_rect.top()..=tree_rect.bottom(),
-            egui::Stroke::new(1.0, colors.border),
+            egui::Stroke::new(1.0_f32, colors.border),
         );
 
         // ── Grid / list view (right side) ───────────────────

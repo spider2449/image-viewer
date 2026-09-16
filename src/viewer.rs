@@ -375,7 +375,7 @@ fn draw_image(
     ui.painter().rect_stroke(
         border_rect,
         egui::CornerRadius::ZERO,
-        egui::Stroke::new(1.0, colors.border),
+        egui::Stroke::new(1.0_f32, colors.border),
         egui::StrokeKind::Inside,
     );
 
@@ -464,7 +464,7 @@ fn draw_image(
             painter.rect_stroke(
                 sel_rect,
                 egui::CornerRadius::ZERO,
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(0xFF, 0xD5, 0x00)),
+                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(0xFF, 0xD5, 0x00)),
                 egui::StrokeKind::Inside,
             );
         }

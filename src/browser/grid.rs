@@ -7,7 +7,6 @@ const LABEL_HEIGHT: f32 = 30.0;
 
 struct GridLayout {
     cols: usize,
-    gap: f32,
     left_pad: f32,
     grid_gap_x: f32,
 }
@@ -19,13 +18,13 @@ fn compute_grid_layout(avail: f32, thumb: f32, total: usize, padding: f32) -> Gr
     let cols_by_width = ((avail + padding) / (thumb + padding)).floor().max(1.0) as usize;
     let cols = cols_by_width.min(total.max(1));
     if cols <= 1 {
-        let gap = ((avail - thumb) / 2.0).max(0.0);
-        GridLayout { cols, gap, left_pad: gap, grid_gap_x: padding }
+        let left_pad = ((avail - thumb) / 2.0).max(0.0);
+        GridLayout { cols, left_pad, grid_gap_x: padding }
     } else if total < cols_by_width {
-        GridLayout { cols, gap: padding, left_pad: 0.0, grid_gap_x: padding }
+        GridLayout { cols, left_pad: 0.0, grid_gap_x: padding }
     } else {
-        let gap = ((avail - cols as f32 * thumb) / (cols as f32 + 1.0)).max(0.0);
-        GridLayout { cols, gap, left_pad: gap, grid_gap_x: gap }
+        let grid_gap_x = ((avail - cols as f32 * thumb) / (cols as f32 + 1.0)).max(0.0);
+        GridLayout { cols, left_pad: grid_gap_x, grid_gap_x }
     }
 }
 
@@ -164,7 +163,6 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
             let total = folders.len() + paths.len();
             let layout = compute_grid_layout(avail, thumb, total, THUMB_PADDING);
             let cols = layout.cols;
-            let gap = layout.gap;
             let grid_gap_x = layout.grid_gap_x;
             let left_pad = layout.left_pad;
 
@@ -793,7 +791,7 @@ fn drag_handle(
     );
     let resp = ui.interact(handle_rect, id, egui::Sense::click_and_drag());
 
-    ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0, border_color));
+    ui.painter().vline(x, header_y..=(header_y + header_h), egui::Stroke::new(1.0_f32, border_color));
 
     if resp.drag_started() || resp.dragged() || resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
@@ -874,7 +872,7 @@ mod tests {
         // not spread centered with a huge gap.
         let l = compute_grid_layout(1000.0, 200.0, 2, 8.0);
         assert_eq!(l.cols, 2);
-        assert_eq!(l.gap, 8.0);
+        assert_eq!(l.grid_gap_x, 8.0);
         assert_eq!(l.left_pad, 0.0);
     }
 
@@ -883,8 +881,8 @@ mod tests {
         // 10 items, avail fits 4 per row: leftover width distributes evenly.
         let l = compute_grid_layout(1000.0, 200.0, 10, 8.0);
         assert_eq!(l.cols, 4);
-        assert!(l.gap > 8.0);
-        assert_eq!(l.left_pad, l.gap);
+        assert!(l.grid_gap_x > 8.0);
+        assert_eq!(l.left_pad, l.grid_gap_x);
     }
 
     #[test]
