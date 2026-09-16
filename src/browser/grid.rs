@@ -581,7 +581,9 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 );
 
                 if response.double_clicked() {
-                    app.switch_to_viewer(i);
+                    if can_open_in_viewer(path) {
+                        app.switch_to_viewer(i);
+                    }
                     return;
                 }
                 if response.clicked() {

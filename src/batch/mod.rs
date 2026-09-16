@@ -197,7 +197,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
             ui.separator();
 
-            let files = app.image_files.clone();
+            let files: Vec<PathBuf> = app
+                .image_files
+                .iter()
+                .filter(|p| crate::format_ext::is_supported_extension(p))
+                .cloned()
+                .collect();
             if app.batch_state.checked.is_empty() && app.batch_state.select_all && !running {
                 app.batch_state.checked.extend(files.iter().cloned());
             }

@@ -399,17 +399,35 @@ impl eframe::App for App {
                     ui.menu_button("Tools", |ui| {
                         if ui.button("Batch Convert").clicked() {
                             self.batch_state.mode = batch::BatchMode::Convert;
-                            self.batch_state.open(&self.image_files);
+                            let images: Vec<std::path::PathBuf> = self
+                                .image_files
+                                .iter()
+                                .filter(|p| crate::format_ext::is_supported_extension(p))
+                                .cloned()
+                                .collect();
+                            self.batch_state.open(&images);
                             ui.close_menu();
                         }
                         if ui.button("Batch Rename").clicked() {
                             self.batch_state.mode = batch::BatchMode::Rename;
-                            self.batch_state.open(&self.image_files);
+                            let images: Vec<std::path::PathBuf> = self
+                                .image_files
+                                .iter()
+                                .filter(|p| crate::format_ext::is_supported_extension(p))
+                                .cloned()
+                                .collect();
+                            self.batch_state.open(&images);
                             ui.close_menu();
                         }
                         if ui.button("Batch Resize").clicked() {
                             self.batch_state.mode = batch::BatchMode::Resize;
-                            self.batch_state.open(&self.image_files);
+                            let images: Vec<std::path::PathBuf> = self
+                                .image_files
+                                .iter()
+                                .filter(|p| crate::format_ext::is_supported_extension(p))
+                                .cloned()
+                                .collect();
+                            self.batch_state.open(&images);
                             ui.close_menu();
                         }
                     });
