@@ -35,6 +35,19 @@ pub struct App {
     pub show_about: bool,
 }
 
+fn collect_folder_files(folder: &std::path::Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(folder) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, startup_image: Option<PathBuf>) -> Self {
         let mut fonts = egui::FontDefinitions::default();
@@ -145,15 +158,7 @@ impl App {
             self.config.last_folder = Some(folder_str);
             self.config.save();
         }
-        let mut files: Vec<PathBuf> = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&folder) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && crate::format_ext::is_supported_extension(&path) {
-                    files.push(path);
-                }
-            }
-        }
+        let mut files: Vec<PathBuf> = collect_folder_files(&folder);
 
         let sort_desc = self.config.sort_descending;
         match self.config.sort_by.as_str() {
@@ -190,7 +195,9 @@ impl App {
         let decode_size = ((self.config.thumb_size * 1.5).ceil() as u32).max(200);
         self.browser_state.thumb_decode_size = decode_size;
         for path in &self.image_files {
-            self.thumbnail_cache.request(path.clone(), decode_size);
+            if crate::format_ext::is_supported_extension(path) {
+                self.thumbnail_cache.request(path.clone(), decode_size);
+            }
         }
     }
 
@@ -306,7 +313,9 @@ impl eframe::App for App {
 
         let decode_size = ((self.config.thumb_size * 1.5).ceil() as u32).max(200);
         for path in &self.image_files {
-            if !self.browser_state.thumbnails.contains(path) {
+            if crate::format_ext::is_supported_extension(path)
+                && !self.browser_state.thumbnails.contains(path)
+            {
                 self.thumbnail_cache.request(path.clone(), decode_size);
             }
         }
@@ -500,6 +509,26 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_collect_folder_files_lists_all_files() {
+        let dir = std::env::temp_dir().join("collect_files_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.jpg"), b"fake").unwrap();
+        std::fs::write(dir.join("b.txt"), b"fake").unwrap();
+        std::fs::write(dir.join("noext"), b"fake").unwrap();
+        std::fs::create_dir_all(dir.join("subdir")).unwrap();
+
+        let mut files = super::collect_folder_files(&dir);
+        files.sort();
+        let names: Vec<String> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, vec!["a.jpg", "b.txt", "noext"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn test_textures_lru_evicts_old_entries() {
