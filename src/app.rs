@@ -48,6 +48,17 @@ fn collect_folder_files(folder: &std::path::Path) -> Vec<PathBuf> {
     files
 }
 
+fn find_next_supported(files: &[PathBuf], from: usize, direction: i32) -> Option<usize> {
+    let mut i = from as i64 + direction as i64;
+    while i >= 0 && (i as usize) < files.len() {
+        if crate::format_ext::is_supported_extension(&files[i as usize]) {
+            return Some(i as usize);
+        }
+        i += direction as i64;
+    }
+    None
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, startup_image: Option<PathBuf>) -> Self {
         let mut fonts = egui::FontDefinitions::default();
@@ -244,10 +255,14 @@ impl App {
     }
 
     pub fn switch_to_viewer(&mut self, index: usize) {
-        if index < self.image_files.len() {
-            self.select_image(index);
-            self.mode = Mode::Viewer;
+        if index >= self.image_files.len() {
+            return;
         }
+        if !crate::format_ext::is_supported_extension(&self.image_files[index]) {
+            return;
+        }
+        self.select_image(index);
+        self.mode = Mode::Viewer;
     }
 
     pub fn request_browser(&mut self) {
@@ -289,14 +304,14 @@ impl App {
     }
 
     pub fn next_image(&mut self) {
-        if self.selected_image_index + 1 < self.image_files.len() {
-            self.select_image(self.selected_image_index + 1);
+        if let Some(next) = find_next_supported(&self.image_files, self.selected_image_index, 1) {
+            self.select_image(next);
         }
     }
 
     pub fn prev_image(&mut self) {
-        if self.selected_image_index > 0 {
-            self.select_image(self.selected_image_index - 1);
+        if let Some(prev) = find_next_supported(&self.image_files, self.selected_image_index, -1) {
+            self.select_image(prev);
         }
     }
 }
@@ -528,6 +543,24 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["a.jpg", "b.txt", "noext"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_find_next_supported_skips_non_images() {
+        use std::path::PathBuf;
+        let files = vec![
+            PathBuf::from("a.txt"),
+            PathBuf::from("b.jpg"),
+            PathBuf::from("c.txt"),
+            PathBuf::from("d.png"),
+        ];
+        assert_eq!(super::find_next_supported(&files, 0, 1), Some(1));
+        assert_eq!(super::find_next_supported(&files, 1, 1), Some(3));
+        assert_eq!(super::find_next_supported(&files, 3, 1), None);
+        assert_eq!(super::find_next_supported(&files, 3, -1), Some(1));
+        assert_eq!(super::find_next_supported(&files, 1, -1), None);
+        let none = vec![PathBuf::from("a.txt")];
+        assert_eq!(super::find_next_supported(&none, 0, 1), None);
     }
 
     #[test]
