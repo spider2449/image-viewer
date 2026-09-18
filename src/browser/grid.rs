@@ -625,13 +625,25 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let name_color = if is_selected { colors.text_primary } else { colors.text_secondary };
-                ui.painter().text(
+                let name_font = egui::FontId::proportional(12.0);
+                let name_max_w = (widths.name - 8.0).max(10.0);
+                let display_name = truncate_to_fit(&name, name_max_w, |s| {
+                    ui.painter().layout_no_wrap(s.to_string(), name_font.clone(), name_color).size().x
+                });
+                let name_clip = egui::Rect::from_min_max(
+                    egui::pos2(x, rect.min.y),
+                    egui::pos2(x + widths.name, rect.max.y),
+                );
+                ui.painter().with_clip_rect(name_clip).text(
                     egui::pos2(x + 4.0, cy),
                     egui::Align2::LEFT_CENTER,
-                    &name,
-                    egui::FontId::proportional(12.0),
+                    &display_name,
+                    name_font,
                     name_color,
                 );
+                if display_name != name {
+                    response.clone().on_hover_text(&name);
+                }
                 x += widths.name + GAP;
                 ui.painter().text(
                     egui::pos2(x + widths.size - 4.0, cy),
@@ -705,18 +717,31 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 );
                 x += ICON_W;
 
-                // Name
+                // Name (truncated with ellipsis + clipped to column so long names
+                // never paint over the Size/Date columns; full name on hover).
                 let name = path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let name_color = if is_selected { colors.text_primary } else { colors.text_secondary };
-                ui.painter().text(
+                let name_font = egui::FontId::proportional(12.0);
+                let name_max_w = (widths.name - 8.0).max(10.0);
+                let display_name = truncate_to_fit(&name, name_max_w, |s| {
+                    ui.painter().layout_no_wrap(s.to_string(), name_font.clone(), name_color).size().x
+                });
+                let name_clip = egui::Rect::from_min_max(
+                    egui::pos2(x, rect.min.y),
+                    egui::pos2(x + widths.name, rect.max.y),
+                );
+                ui.painter().with_clip_rect(name_clip).text(
                     egui::pos2(x + 4.0, cy),
                     egui::Align2::LEFT_CENTER,
-                    &name,
-                    egui::FontId::proportional(12.0),
+                    &display_name,
+                    name_font,
                     name_color,
                 );
+                if display_name != name {
+                    response.clone().on_hover_text(&name);
+                }
                 x += widths.name + GAP;
 
                 // Size
@@ -862,9 +887,32 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
     }
 }
 
+/// Truncate `name` with an ellipsis so its measured width fits `max_width`.
+/// `measure` maps text to its rendered width in pixels (egui layout in UI,
+/// char-count estimate in tests). Always returns a string that fits when
+/// possible; never panics on CJK or tiny widths.
+fn truncate_to_fit(name: &str, max_width: f32, measure: impl Fn(&str) -> f32) -> String {
+    if measure(name) <= max_width {
+        return name.to_string();
+    }
+    let ellipsis = "…";
+    if measure(ellipsis) >= max_width {
+        return ellipsis.to_string();
+    }
+    let total: usize = name.chars().count();
+    // Shrink from the end until text + ellipsis fits.
+    for n in (0..total).rev() {
+        let candidate: String = name.chars().take(n).collect::<String>() + ellipsis;
+        if measure(&candidate) <= max_width {
+            return candidate;
+        }
+    }
+    ellipsis.to_string()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, format_size, format_timestamp, truncate_name};
+    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, format_size, format_timestamp, truncate_name, truncate_to_fit};
 
     #[test]
     fn test_single_incomplete_row_left_aligns() {
@@ -960,5 +1008,31 @@ mod tests {
     fn test_format_size_gb() {
         assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
         assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.0 GB");
+    }
+
+    #[test]
+    fn test_truncate_to_fit_short_unchanged() {
+        let t = truncate_to_fit("short.txt", 200.0, |s| s.len() as f32 * 7.0);
+        assert_eq!(t, "short.txt");
+    }
+
+    #[test]
+    fn test_truncate_to_fit_long_truncates_with_ellipsis() {
+        // Each char = 10px, max 50px: must truncate and end with ellipsis.
+        let t = truncate_to_fit("blender_debug_gpu_glitchworkaround_cmd", 50.0, |s| {
+            s.chars().count() as f32 * 10.0
+        });
+        assert!(t.ends_with('…'));
+        let w = t.chars().count() as f32 * 10.0;
+        assert!(w <= 50.0, "truncated text width {w} exceeds max 50.0");
+        assert!(t.len() < "blender_debug_gpu_glitchworkaround_cmd".len());
+    }
+
+    #[test]
+    fn test_truncate_to_fit_tiny_width_no_overflow() {
+        let t = truncate_to_fit("blender.exe", 5.0, |s| s.len() as f32 * 7.0);
+        // Must not return the full string; must be at most ellipsis.
+        assert_ne!(t, "blender.exe");
+        assert!(t.chars().count() <= 1);
     }
 }
