@@ -167,7 +167,8 @@ fn show_delete_confirmation(app: &mut App, ctx: &egui::Context) {
             ui.label("Move this folder and all of its contents to the recycle bin/trash?");
             ui.monospace(path.display().to_string());
             if let Some(error) = &app.browser_state.error_message {
-                ui.colored_label(egui::Color32::RED, error);
+                let danger = app.theme_colors().danger;
+                ui.colored_label(danger, error);
             }
             ui.horizontal(|ui| {
                 if ui.button("Cancel").clicked() {

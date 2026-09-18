@@ -192,12 +192,14 @@ fn show_node(
                 ui.add_space(16.0);
             }
 
+            // Folder icon stays in the theme family: accent for roots,
+            // muted secondary tones for deeper levels.
             let icon_color = if depth == 0 {
                 colors.accent
             } else if depth == 1 {
-                egui::Color32::from_rgb(0xf0, 0xc0, 0x40)
+                colors.text_secondary
             } else {
-                egui::Color32::from_rgb(0x80, 0xc0, 0x80)
+                colors.text_secondary.gamma_multiply(0.7)
             };
             ui.label(egui::RichText::new("\u{1F4C1}").color(icon_color));
             ui.add_space(4.0);
@@ -251,7 +253,7 @@ fn show_node(
         ui.painter().rect_filled(
             frame_resp.response.rect,
             egui::CornerRadius::same(4),
-            egui::Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 20),
+            colors.hover_bg,
         );
     }
 

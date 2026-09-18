@@ -203,7 +203,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             ui.painter().rect_filled(
                                 glow_rect,
                                 CornerRadius::same(6),
-                                Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 30),
+                                colors.selected_bg,
                             );
                         }
                         let card_bg = if is_selected { colors.selected_bg } else { colors.card_bg };
@@ -287,7 +287,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             ui.painter().rect_filled(
                                 glow_rect,
                                 CornerRadius::same(6),
-                                Color32::from_rgba_premultiplied(0x4a, 0x9e, 0xff, 30),
+                                colors.selected_bg,
                             );
                         }
 

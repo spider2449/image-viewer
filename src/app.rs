@@ -34,6 +34,13 @@ pub struct App {
     pub exif_state: exif::ExifData,
     pub show_hotkeys: bool,
     pub show_about: bool,
+    pub show_themes: bool,
+    /// Uncommitted hover preview. While set, `theme_colors()` and the egui
+    /// visuals follow this theme; closing the menu/gallery without clicking
+    /// clears it and restores the recorded `config.theme`.
+    pub theme_preview: Option<crate::theme::Theme>,
+    /// Set when any theme option is hovered this frame; drives the revert.
+    pub theme_hovered_frame: bool,
 }
 
 fn collect_folder_entries(folder: &std::path::Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -107,6 +114,9 @@ impl App {
             exif_state: exif::ExifData::new(),
             show_hotkeys: false,
             show_about: false,
+            show_themes: false,
+            theme_preview: None,
+            theme_hovered_frame: false,
         };
 
         if let Some(image_path) = startup_image.and_then(Self::resolve_startup_image) {
@@ -149,7 +159,123 @@ impl App {
     }
 
     pub fn theme_colors(&self) -> crate::theme::ThemeColors {
-        crate::theme::palette(crate::theme::Theme::from_str(&self.config.theme))
+        // While hovering a theme option, preview it everywhere (menu bar,
+        // tree, grid, viewer, editor) without persisting until clicked.
+        let theme = self
+            .theme_preview
+            .unwrap_or_else(|| crate::theme::Theme::from_str(&self.config.theme));
+        crate::theme::palette(theme)
+    }
+
+    /// Commit a theme: persist to config, then re-skin the live UI.
+    pub fn set_theme(&mut self, ctx: &egui::Context, theme: crate::theme::Theme) {
+        self.theme_preview = None;
+        self.config.theme = theme.as_str().to_string();
+        self.config.save();
+        crate::theme::apply_theme(ctx, theme);
+    }
+
+    /// Hover preview: re-skin the live UI without persisting. Reverted by
+    /// `revert_theme_preview` when the menu/gallery closes without a click.
+    pub fn preview_theme(&mut self, ctx: &egui::Context, theme: crate::theme::Theme) {
+        self.theme_hovered_frame = true;
+        if self.theme_preview != Some(theme) {
+            self.theme_preview = Some(theme);
+            crate::theme::apply_theme(ctx, theme);
+        }
+    }
+
+    /// Drop an uncommitted hover preview and restore the recorded theme.
+    pub fn revert_theme_preview(&mut self, ctx: &egui::Context) {
+        if self.theme_preview.is_some() {
+            self.theme_preview = None;
+            let recorded = crate::theme::Theme::from_str(&self.config.theme);
+            crate::theme::apply_theme(ctx, recorded);
+        }
+    }
+
+    /// Theme gallery with hover preview: hovering a row re-skins the whole
+    /// app instantly, clicking commits it, and closing the window without
+    /// clicking restores the recorded theme.
+    fn show_theme_gallery(&mut self, ctx: &egui::Context) {
+        let current = self.config.theme.clone();
+        let chrome = self.theme_colors();
+        let mut hovered: Option<crate::theme::Theme> = None;
+        let mut picked: Option<crate::theme::Theme> = None;
+        egui::Window::new("Themes")
+            .open(&mut self.show_themes)
+            .default_size([460.0, 380.0])
+            .show(ctx, |ui| {
+                ui.label("Hover to preview — click a row to apply.");
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for theme in crate::theme::Theme::all() {
+                        let pal = crate::theme::palette(*theme);
+                        let is_current = current == theme.as_str();
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::Vec2::new(ui.available_width(), 48.0),
+                            egui::Sense::click(),
+                        );
+                        #[allow(deprecated)]
+                        ui.allocate_ui_at_rect(rect.shrink(4.0), |ui| {
+                            ui.horizontal(|ui| {
+                                for sw in [
+                                    pal.panel_bg,
+                                    pal.card_bg,
+                                    pal.accent,
+                                    pal.text_primary,
+                                    pal.danger,
+                                ] {
+                                    let (srect, _) = ui.allocate_exact_size(
+                                        egui::Vec2::splat(18.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(
+                                        srect,
+                                        egui::CornerRadius::same(4),
+                                        sw,
+                                    );
+                                }
+                                ui.add_space(4.0);
+                                ui.vertical(|ui| {
+                                    let name = if is_current {
+                                        format!("{} ●", theme.name())
+                                    } else {
+                                        theme.name().to_string()
+                                    };
+                                    ui.label(egui::RichText::new(name).strong());
+                                    ui.colored_label(
+                                        chrome.text_secondary,
+                                        theme.description(),
+                                    );
+                                });
+                            });
+                        });
+                        let border = if resp.hovered() || is_current {
+                            chrome.accent
+                        } else {
+                            chrome.border
+                        };
+                        ui.painter().rect_stroke(
+                            rect,
+                            egui::CornerRadius::same(6),
+                            egui::Stroke::new(if is_current { 2.0 } else { 1.0 }, border),
+                            egui::StrokeKind::Outside,
+                        );
+                        if resp.hovered() {
+                            hovered = Some(*theme);
+                        }
+                        if resp.clicked() {
+                            picked = Some(*theme);
+                        }
+                    }
+                });
+            });
+        if let Some(theme) = picked {
+            self.set_theme(ctx, theme);
+        } else if let Some(theme) = hovered {
+            self.preview_theme(ctx, theme);
+        }
     }
 
     fn cache_dir() -> PathBuf {
@@ -350,6 +476,11 @@ impl eframe::App for App {
             }
         }
 
+        // Reset each frame; the menu/gallery set it when a theme is hovered.
+        // A hover preview left unset here means the popup closed without a
+        // click, so it is reverted below.
+        self.theme_hovered_frame = false;
+
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame {
                 fill: self.theme_colors().panel_bg,
@@ -400,16 +531,34 @@ impl eframe::App for App {
                             ui.close_menu();
                         }
                         ui.separator();
-                        let next_theme = if self.config.theme == "light" { "Dark" } else { "Light" };
-                        if ui.button(format!("Switch to {next_theme} Theme")).clicked() {
-                            self.config.theme = next_theme.to_lowercase();
-                            self.config.save();
-                            crate::theme::apply_theme(
-                                ctx,
-                                crate::theme::Theme::from_str(&self.config.theme),
+                        ui.menu_button("Theme", |ui| {
+                            ui.label(
+                                egui::RichText::new("Hover to preview, click to apply")
+                                    .weak()
+                                    .small(),
                             );
-                            ui.close_menu();
-                        }
+                            ui.separator();
+                            for theme in crate::theme::Theme::all() {
+                                let id = theme.as_str().to_string();
+                                let resp = ui.selectable_value(
+                                    &mut self.config.theme,
+                                    id,
+                                    theme.name(),
+                                );
+                                if resp.hovered() {
+                                    self.preview_theme(ctx, *theme);
+                                }
+                                if resp.changed() {
+                                    self.set_theme(ctx, *theme);
+                                    ui.close_menu();
+                                }
+                            }
+                            ui.separator();
+                            if ui.button("Theme Gallery…").clicked() {
+                                self.show_themes = true;
+                                ui.close_menu();
+                            }
+                        });
                     });
                     ui.menu_button("Tools", |ui| {
                         if ui.button("Batch Convert").clicked() {
@@ -544,6 +693,16 @@ impl eframe::App for App {
                         ui.label("THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.");
                     });
                 });
+        }
+
+        if self.show_themes {
+            self.show_theme_gallery(ctx);
+        }
+
+        // No theme hovered this frame: dismiss any uncommitted preview and
+        // restore the recorded theme instead of leaving it stuck.
+        if !self.theme_hovered_frame {
+            self.revert_theme_preview(ctx);
         }
 
         let slideshow_active = matches!(self.mode, Mode::Viewer) && self.viewer_state.is_slideshow;

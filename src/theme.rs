@@ -1,16 +1,84 @@
 use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Style, Visuals, Vec2};
 
-// ── Theme switch (light/dark) ─────────────────────────────
+// ── Theme switch ──────────────────────────────────────────
+// Every subcomponent (menu bar, folder tree, thumbnail grid, viewer,
+// editor panel, EXIF view, batch dialog) reads its colors from
+// `palette(theme)`, so adding a variant here automatically re-skins the
+// whole app. No hardcoded UI colors outside this module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Theme {
     Dark,
     Light,
+    Nord,
+    TokyoNight,
+    Gruvbox,
+    Sepia,
 }
 
 impl Theme {
+    /// All available themes in menu/gallery order.
+    pub fn all() -> &'static [Theme] {
+        &[
+            Theme::Dark,
+            Theme::Light,
+            Theme::Nord,
+            Theme::TokyoNight,
+            Theme::Gruvbox,
+            Theme::Sepia,
+        ]
+    }
+
+    /// Stable id persisted in `config.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+            Theme::Nord => "nord",
+            Theme::TokyoNight => "tokyo-night",
+            Theme::Gruvbox => "gruvbox",
+            Theme::Sepia => "sepia",
+        }
+    }
+
+    /// Human-readable name for menus and the gallery.
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Dark => "Dark",
+            Theme::Light => "Light",
+            Theme::Nord => "Nord Frost",
+            Theme::TokyoNight => "Tokyo Night",
+            Theme::Gruvbox => "Gruvbox",
+            Theme::Sepia => "Sepia Paper",
+        }
+    }
+
+    /// One-line hint shown in the gallery.
+    pub fn description(self) -> &'static str {
+        match self {
+            Theme::Dark => "Default violet-tinted dark",
+            Theme::Light => "Default clean light",
+            Theme::Nord => "Cool polar dark, easy on the eyes",
+            Theme::TokyoNight => "Deep blue dark for night viewing",
+            Theme::Gruvbox => "Warm retro dark with orange accent",
+            Theme::Sepia => "Warm paper light for daytime browsing",
+        }
+    }
+
+    pub fn is_dark(self) -> bool {
+        match self {
+            Theme::Dark | Theme::Nord | Theme::TokyoNight | Theme::Gruvbox => true,
+            Theme::Light | Theme::Sepia => false,
+        }
+    }
+
     pub fn from_str(s: &str) -> Theme {
         match s {
             "light" => Theme::Light,
+            "nord" => Theme::Nord,
+            "tokyo-night" | "tokyonight" | "tokyo_night" => Theme::TokyoNight,
+            "gruvbox" => Theme::Gruvbox,
+            "sepia" => Theme::Sepia,
+            "dark" => Theme::Dark,
             _ => Theme::Dark,
         }
     }
@@ -56,6 +124,54 @@ pub fn palette(theme: Theme) -> ThemeColors {
             border: Color32::from_rgb(0xd6, 0xc7, 0xf0),
             danger: Color32::from_rgb(0xd6, 0x2b, 0x54),
         },
+        Theme::Nord => ThemeColors {
+            bg_dark: Color32::from_rgb(0x2e, 0x34, 0x40),
+            panel_bg: Color32::from_rgb(0x3b, 0x42, 0x52),
+            card_bg: Color32::from_rgb(0x43, 0x4c, 0x5e),
+            hover_bg: Color32::from_rgb(0x4c, 0x56, 0x6a),
+            accent: Color32::from_rgb(0x88, 0xc0, 0xd0),
+            selected_bg: Color32::from_rgba_unmultiplied(0x88, 0xc0, 0xd0, 0x40),
+            text_primary: Color32::from_rgb(0xec, 0xef, 0xf4),
+            text_secondary: Color32::from_rgb(0x9a, 0xa3, 0xb2),
+            border: Color32::from_rgb(0x4c, 0x56, 0x6a),
+            danger: Color32::from_rgb(0xbf, 0x61, 0x6a),
+        },
+        Theme::TokyoNight => ThemeColors {
+            bg_dark: Color32::from_rgb(0x1a, 0x1b, 0x26),
+            panel_bg: Color32::from_rgb(0x24, 0x28, 0x3b),
+            card_bg: Color32::from_rgb(0x2f, 0x35, 0x49),
+            hover_bg: Color32::from_rgb(0x41, 0x48, 0x68),
+            accent: Color32::from_rgb(0x7a, 0xa2, 0xf7),
+            selected_bg: Color32::from_rgba_unmultiplied(0x7a, 0xa2, 0xf7, 0x40),
+            text_primary: Color32::from_rgb(0xc0, 0xca, 0xf5),
+            text_secondary: Color32::from_rgb(0x9a, 0xa5, 0xce),
+            border: Color32::from_rgb(0x3b, 0x42, 0x61),
+            danger: Color32::from_rgb(0xf7, 0x76, 0x8e),
+        },
+        Theme::Gruvbox => ThemeColors {
+            bg_dark: Color32::from_rgb(0x28, 0x28, 0x28),
+            panel_bg: Color32::from_rgb(0x32, 0x30, 0x2f),
+            card_bg: Color32::from_rgb(0x3c, 0x38, 0x36),
+            hover_bg: Color32::from_rgb(0x50, 0x49, 0x45),
+            accent: Color32::from_rgb(0xfe, 0x80, 0x19),
+            selected_bg: Color32::from_rgba_unmultiplied(0xfe, 0x80, 0x19, 0x40),
+            text_primary: Color32::from_rgb(0xeb, 0xdb, 0xb2),
+            text_secondary: Color32::from_rgb(0xa8, 0x99, 0x84),
+            border: Color32::from_rgb(0x50, 0x49, 0x45),
+            danger: Color32::from_rgb(0xfb, 0x49, 0x34),
+        },
+        Theme::Sepia => ThemeColors {
+            bg_dark: Color32::from_rgb(0xf7, 0xf1, 0xe3),
+            panel_bg: Color32::from_rgb(0xf0, 0xe7, 0xd3),
+            card_bg: Color32::from_rgb(0xe9, 0xdc, 0xc0),
+            hover_bg: Color32::from_rgb(0xde, 0xd0, 0xb4),
+            accent: Color32::from_rgb(0x9c, 0x66, 0x44),
+            selected_bg: Color32::from_rgb(0xd9, 0xc6, 0xa5),
+            text_primary: Color32::from_rgb(0x4a, 0x42, 0x38),
+            text_secondary: Color32::from_rgb(0x8a, 0x7d, 0x6b),
+            border: Color32::from_rgb(0xd8, 0xc9, 0xac),
+            danger: Color32::from_rgb(0xb3, 0x26, 0x1e),
+        },
     }
 }
 
@@ -67,13 +183,13 @@ pub fn styled_icon(codepoint: &str, colors: &ThemeColors) -> egui::RichText {
 // ── Build the global Visuals ───────────────────────────────
 pub fn theme_visuals(theme: Theme) -> Visuals {
     let c = palette(theme);
-    let base = if theme == Theme::Dark {
+    let base = if theme.is_dark() {
         Visuals::dark()
     } else {
         Visuals::light()
     };
 
-    let window_shadow = if theme == Theme::Dark {
+    let window_shadow = if theme.is_dark() {
         egui::epaint::Shadow {
             offset: [0, 8],
             blur: 24,
@@ -90,7 +206,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
     };
 
     Visuals {
-        dark_mode: theme == Theme::Dark,
+        dark_mode: theme.is_dark(),
         override_text_color: Some(c.text_primary),
         window_corner_radius: CornerRadius::same(10),
         window_stroke: Stroke::new(1.0_f32, c.border),
@@ -160,7 +276,7 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
 // and may not match `theme` yet). Pin the preference and target the slot
 // explicitly so both the style and visuals always land on the right theme.
 pub fn apply_theme(ctx: &egui::Context, theme: Theme) {
-    let egui_theme = if theme == Theme::Dark {
+    let egui_theme = if theme.is_dark() {
         egui::Theme::Dark
     } else {
         egui::Theme::Light
@@ -251,7 +367,77 @@ mod tests {
     fn test_theme_from_str() {
         assert_eq!(Theme::from_str("dark"), Theme::Dark);
         assert_eq!(Theme::from_str("light"), Theme::Light);
+        assert_eq!(Theme::from_str("nord"), Theme::Nord);
+        assert_eq!(Theme::from_str("tokyo-night"), Theme::TokyoNight);
+        assert_eq!(Theme::from_str("gruvbox"), Theme::Gruvbox);
+        assert_eq!(Theme::from_str("sepia"), Theme::Sepia);
         assert_eq!(Theme::from_str("nonsense"), Theme::Dark);
         assert_eq!(Theme::from_str(""), Theme::Dark);
+    }
+
+    #[test]
+    fn test_theme_id_roundtrip() {
+        for theme in Theme::all() {
+            assert_eq!(Theme::from_str(theme.as_str()), *theme);
+        }
+    }
+
+    #[test]
+    fn test_all_themes_have_unique_ids_and_names() {
+        let all = Theme::all();
+        assert_eq!(all.len(), 6);
+        let mut ids = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::new();
+        for theme in all {
+            assert!(ids.insert(theme.as_str()), "duplicate id: {}", theme.as_str());
+            assert!(names.insert(theme.name()), "duplicate name: {}", theme.name());
+            assert!(!theme.description().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_new_palettes_differ_from_dark_and_light() {
+        let dark = palette(Theme::Dark);
+        let light = palette(Theme::Light);
+        for theme in [Theme::Nord, Theme::TokyoNight, Theme::Gruvbox, Theme::Sepia] {
+            let c = palette(theme);
+            let vs_dark = [
+                dark.bg_dark != c.bg_dark,
+                dark.panel_bg != c.panel_bg,
+                dark.accent != c.accent,
+                dark.text_primary != c.text_primary,
+            ];
+            assert!(
+                vs_dark.iter().filter(|&&d| d).count() >= 3,
+                "{:?} palette too close to dark",
+                theme
+            );
+            let vs_light = [
+                light.bg_dark != c.bg_dark,
+                light.panel_bg != c.panel_bg,
+                light.accent != c.accent,
+            ];
+            // Sepia is light-family; the others must differ from light.
+            if theme != Theme::Sepia {
+                assert!(
+                    vs_light.iter().all(|&d| d),
+                    "{:?} palette too close to light",
+                    theme
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_dark_matches_visuals() {
+        for theme in Theme::all() {
+            assert_eq!(theme_visuals(*theme).dark_mode, theme.is_dark());
+        }
+        assert!(Theme::Dark.is_dark());
+        assert!(Theme::Nord.is_dark());
+        assert!(Theme::TokyoNight.is_dark());
+        assert!(Theme::Gruvbox.is_dark());
+        assert!(!Theme::Light.is_dark());
+        assert!(!Theme::Sepia.is_dark());
     }
 }

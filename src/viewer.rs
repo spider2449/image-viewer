@@ -312,7 +312,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     egui::Align2::CENTER_CENTER,
                     format!("Error: {e}"),
                     egui::FontId::proportional(18.0),
-                    Color32::RED,
+                    colors.danger,
                 );
                 return;
             }
@@ -366,7 +366,7 @@ fn draw_image(
         ui.painter().rect_filled(
             bg_rect,
             egui::CornerRadius::ZERO,
-            egui::Color32::from_rgb(0x1a, 0x1a, 0x1a),
+            colors.bg_dark,
         );
     }
 
@@ -464,7 +464,7 @@ fn draw_image(
             painter.rect_stroke(
                 sel_rect,
                 egui::CornerRadius::ZERO,
-                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(0xFF, 0xD5, 0x00)),
+                egui::Stroke::new(1.5_f32, colors.accent),
                 egui::StrokeKind::Inside,
             );
         }
