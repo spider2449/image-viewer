@@ -235,13 +235,20 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             rect.min + Vec2::new(4.0, app.config.thumb_size),
                             Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
                         );
-                        ui.painter().text(
+                        let label_font = egui::FontId::proportional(11.0);
+                        let display_name = grid_label_display(&name, app.config.thumb_size, |s| {
+                            ui.painter().layout_no_wrap(s.to_string(), label_font.clone(), colors.text_primary).size().x
+                        });
+                        ui.painter().with_clip_rect(label_rect).text(
                             label_rect.left_center(),
                             egui::Align2::LEFT_CENTER,
-                            &truncate_name(&name, 18),
-                            egui::FontId::proportional(11.0),
+                            &display_name,
+                            label_font,
                             colors.text_primary,
                         );
+                        if display_name != name {
+                            response.clone().on_hover_text(&name);
+                        }
                         if response.double_clicked() {
                             let target = folder.clone();
                             app.current_folder = Some(target);
@@ -331,9 +338,8 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                                 t
                             };
                             let tex_size = tex.size_vec2();
-                            let scale =
-                                (app.config.thumb_size / tex_size.x).min(app.config.thumb_size / tex_size.y).min(1.0);
-                            let draw_size = tex_size * scale;
+                            let draw_size =
+                                fit_draw_size(tex_size.x, tex_size.y, app.config.thumb_size);
                             let offset = Vec2::new(
                                 (app.config.thumb_size - draw_size.x) / 2.0,
                                 (app.config.thumb_size - draw_size.y) / 2.0,
@@ -381,14 +387,20 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         if app.browser_state.rename_target == Some(i) {
                             inline_rename(app, ui, path, label_rect);
                         } else {
-                            let display_name = truncate_name(&name, 18);
-                            ui.painter().text(
+                            let label_font = egui::FontId::proportional(11.0);
+                            let display_name = grid_label_display(&name, app.config.thumb_size, |s| {
+                                ui.painter().layout_no_wrap(s.to_string(), label_font.clone(), colors.text_secondary).size().x
+                            });
+                            ui.painter().with_clip_rect(label_rect).text(
                                 label_rect.left_center(),
                                 egui::Align2::LEFT_CENTER,
                                 &display_name,
-                                egui::FontId::proportional(11.0),
+                                label_font,
                                 colors.text_secondary,
                             );
+                            if display_name != name {
+                                response.clone().on_hover_text(&name);
+                            }
                         }
 
                         // Context menu
@@ -878,20 +890,11 @@ pub fn entry_glyph(is_dir: bool, path: &std::path::Path) -> &'static str {
     }
 }
 
-fn truncate_name(name: &str, max_chars: usize) -> String {
-    if name.chars().count() > max_chars {
-        let truncated: String = name.chars().take(max_chars - 1).collect();
-        format!("{truncated}…")
-    } else {
-        name.to_string()
-    }
-}
-
 /// Truncate `name` with an ellipsis so its measured width fits `max_width`.
 /// `measure` maps text to its rendered width in pixels (egui layout in UI,
 /// char-count estimate in tests). Always returns a string that fits when
 /// possible; never panics on CJK or tiny widths.
-fn truncate_to_fit(name: &str, max_width: f32, measure: impl Fn(&str) -> f32) -> String {
+pub(crate) fn truncate_to_fit(name: &str, max_width: f32, measure: impl Fn(&str) -> f32) -> String {
     if measure(name) <= max_width {
         return name.to_string();
     }
@@ -910,9 +913,28 @@ fn truncate_to_fit(name: &str, max_width: f32, measure: impl Fn(&str) -> f32) ->
     ellipsis.to_string()
 }
 
+/// Display string for a thumbnail-grid card label: truncated with an
+/// ellipsis to the label width derived from the current `thumb_size`
+/// (label rect = thumb width minus padding), so zooming in/out via the
+/// size slider or Ctrl+wheel re-fits the name dynamically.
+fn grid_label_display(name: &str, thumb_size: f32, measure: impl Fn(&str) -> f32) -> String {
+    truncate_to_fit(name, (thumb_size - 8.0).max(10.0), measure)
+}
+
+/// Draw size of a thumbnail inside a square `cell`: uniform fit scaling
+/// (aspect preserved, upscale allowed) so every image footprint tracks the
+/// grid zoom instead of small images freezing at native size.
+fn fit_draw_size(tex_w: f32, tex_h: f32, cell: f32) -> Vec2 {
+    if tex_w <= 0.0 || tex_h <= 0.0 || cell <= 0.0 {
+        return Vec2::ZERO;
+    }
+    let scale = (cell / tex_w).min(cell / tex_h);
+    Vec2::new(tex_w * scale, tex_h * scale)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, format_size, format_timestamp, truncate_name, truncate_to_fit};
+    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, fit_draw_size, format_size, format_timestamp, grid_label_display, truncate_to_fit};
 
     #[test]
     fn test_single_incomplete_row_left_aligns() {
@@ -960,28 +982,6 @@ mod tests {
     fn test_format_timestamp_known_date() {
         // 2026-07-17 12:34:56 UTC
         assert_eq!(format_timestamp(1_784_291_696), "2026-07-17 12:34");
-    }
-
-    #[test]
-    fn test_truncate_name_short_unchanged() {
-        assert_eq!(truncate_name("short.png", 18), "short.png");
-    }
-
-    #[test]
-    fn test_truncate_name_long_ascii() {
-        let name = "a_very_long_filename_indeed";
-        let t = truncate_name(name, 18);
-        assert_eq!(t.chars().count(), 18); // 17 chars + ellipsis
-        assert!(t.ends_with('…'));
-    }
-
-    #[test]
-    fn test_truncate_name_cjk_no_panic() {
-        // 20 CJK chars = 60 bytes; byte-slicing at 17 would panic
-        let name = "测试文件名称非常长的图片文件示例一二三四";
-        let t = truncate_name(name, 18);
-        assert!(t.ends_with('…'));
-        assert_eq!(t.chars().count(), 18);
     }
 
     #[test]
@@ -1034,5 +1034,65 @@ mod tests {
         // Must not return the full string; must be at most ellipsis.
         assert_ne!(t, "blender.exe");
         assert!(t.chars().count() <= 1);
+    }
+
+    #[test]
+    fn test_truncate_to_fit_cjk_no_panic() {
+        // 20 CJK chars; char-based truncation must not panic or overflow.
+        let name = "测试文件名称非常长的图片文件示例一二三四";
+        let t = truncate_to_fit(name, 100.0, |s| s.chars().count() as f32 * 10.0);
+        assert!(t.ends_with('…'));
+        assert!((t.chars().count() as f32 * 10.0) <= 100.0);
+    }
+
+    #[test]
+    fn test_grid_label_display_adapts_to_thumb_size() {
+        // 10px per char; the same long name must shrink with the thumbnail.
+        let name = "blender_debug_gpu_glitchworkaround_cmd"; // 37 chars = 370px
+        let measure = |s: &str| s.chars().count() as f32 * 10.0;
+        let small = grid_label_display(name, 60.0, measure);
+        let large = grid_label_display(name, 400.0, measure);
+        assert_eq!(large, name, "large thumbs must show the full name");
+        assert!(small.ends_with('…'), "small thumbs must truncate with ellipsis");
+        assert!(
+            small.chars().count() < large.chars().count(),
+            "display length must shrink with thumb size"
+        );
+        assert!(measure(&small) <= 60.0 - 8.0);
+    }
+
+    #[test]
+    fn test_fit_draw_size_upscales_small_images() {
+        // A 100x150 image in a 175px cell must grow to touch the cell edge
+        // (uniform zoom), not stay frozen at native size.
+        let d = fit_draw_size(100.0, 150.0, 175.0);
+        assert!(
+            (d.y - 175.0).abs() < 0.01,
+            "height must fill the cell, got {d:?}"
+        );
+        let aspect = d.x / d.y;
+        assert!(
+            (aspect - 100.0 / 150.0).abs() < 0.001,
+            "aspect must be preserved, got {d:?}"
+        );
+    }
+
+    #[test]
+    fn test_fit_draw_size_downscales_large_images() {
+        // 800x450 landscape in a 175px cell: width fills, aspect preserved.
+        let d = fit_draw_size(800.0, 450.0, 175.0);
+        assert!((d.x - 175.0).abs() < 0.01, "width must fill the cell, got {d:?}");
+        let aspect = d.x / d.y;
+        assert!(
+            (aspect - 800.0 / 450.0).abs() < 0.001,
+            "aspect must be preserved, got {d:?}"
+        );
+    }
+
+    #[test]
+    fn test_fit_draw_size_degenerate_has_no_nan() {
+        let d = fit_draw_size(0.0, 0.0, 175.0);
+        assert!(!d.x.is_nan() && !d.y.is_nan());
+        assert_eq!(d, egui::Vec2::ZERO);
     }
 }

@@ -209,8 +209,28 @@ fn show_node(
             } else {
                 colors.text_primary
             };
-            let label = ui.colored_label(label_color, &node.name)
+            // Truncate to the remaining row width so long folder names never
+            // overflow the side panel; full name is shown on hover.
+            let body_font = ui
+                .style()
+                .text_styles
+                .get(&egui::TextStyle::Body)
+                .cloned()
+                .unwrap_or_else(|| egui::FontId::proportional(14.0));
+            let avail_w = ui.available_width().max(10.0);
+            let display_name =
+                crate::browser::grid::truncate_to_fit(&node.name, avail_w, |s| {
+                    ui.painter()
+                        .layout_no_wrap(s.to_string(), body_font.clone(), label_color)
+                        .size()
+                        .x
+                });
+            let label = ui
+                .colored_label(label_color, &display_name)
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if display_name != node.name {
+                label.clone().on_hover_text(&node.name);
+            }
 
             if label.clicked() {
                 *click_folder = Some(node.path.clone());
