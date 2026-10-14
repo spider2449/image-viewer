@@ -175,7 +175,7 @@ use ab_glyph::{FontArc, PxScale};
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_filled_ellipse_mut, draw_filled_rect_mut, draw_hollow_ellipse_mut,
-    draw_hollow_rect_mut, draw_polygon_mut, draw_text_mut,
+    draw_hollow_rect_mut, draw_text_mut,
 };
 use imageproc::rect::Rect as IRect;
 
@@ -213,36 +213,47 @@ fn burn_one(img: &mut RgbaImage, shape: &super::shapes::Shape) {
     };
     let color = to_rgba(style.effective_color());
     let dist = (b.x - a.x).hypot(b.y - a.y);
-    let steps = (dist / 1.0).ceil().max(1.0) as i32;
-    let r = (style.width / 2.0).max(0.5) as i32;
+    let steps = (dist / 0.5).ceil().max(1.0) as i32;
+    let r = (style.width / 2.0).max(0.5);
     for i in 0..=steps {
         let t = i as f32 / steps as f32;
-        draw_filled_circle_blend(
+        draw_soft_disc(
             img,
-            (
-                (a.x + (b.x - a.x) * t) as i32,
-                (a.y + (b.y - a.y) * t) as i32,
-            ),
+            (a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t),
             r,
             color,
         );
     }
 }
 
-// Disc stamp with per-pixel blending; skips out-of-bounds pixels.
-fn draw_filled_circle_blend(img: &mut RgbaImage, center: (i32, i32), radius: i32, color: Rgba<u8>) {
+// Soft-edge disc stamp with ~1px radial falloff at the rim, so stroked
+// paths get antialiased edges. Sub-pixel centers; skips out-of-bounds.
+fn draw_soft_disc(img: &mut RgbaImage, center: (f32, f32), radius: f32, color: Rgba<u8>) {
     let (w, h) = (img.width() as i32, img.height() as i32);
-    for dy in -radius..=radius {
-        for dx in -radius..=radius {
-            if dx * dx + dy * dy > radius * radius {
-                continue;
-            }
-            let (x, y) = (center.0 + dx, center.1 + dy);
+    let r = radius.max(0.5);
+    let x0 = (center.0 - r - 1.0).floor() as i32;
+    let x1 = (center.0 + r + 1.0).ceil() as i32;
+    let y0 = (center.1 - r - 1.0).floor() as i32;
+    let y1 = (center.1 + r + 1.0).ceil() as i32;
+    for y in y0..=y1 {
+        for x in x0..=x1 {
             if x < 0 || y < 0 || x >= w || y >= h {
                 continue;
             }
+            // Distance from the pixel center to the stamp center.
+            let d = (x as f32 + 0.5 - center.0).hypot(y as f32 + 0.5 - center.1);
+            let coverage = (r + 0.5 - d).clamp(0.0, 1.0);
+            if coverage <= 0.0 {
+                continue;
+            }
             let px = img.get_pixel_mut(x as u32, y as u32);
-            *px = blend(*px, color);
+            let soft = Rgba([
+                color[0],
+                color[1],
+                color[2],
+                (color[3] as f32 * coverage) as u8,
+            ]);
+            *px = blend(*px, soft);
         }
     }
 }
@@ -335,7 +346,8 @@ pub fn burn(base: &DynamicImage, shapes: &[super::shapes::Shape]) -> DynamicImag
                 burn_one(&mut img, shape);
             }
             Shape::Arrow { a, b, style } => {
-                // Shaft reuses the Line path; head is a filled triangle.
+                // Shaft reuses the Line path; the head is stroked as two
+                // short wing segments so it gets the same antialiasing.
                 let shaft = Shape::Line {
                     a: *a,
                     b: *b,
@@ -346,12 +358,14 @@ pub fn burn(base: &DynamicImage, shapes: &[super::shapes::Shape]) -> DynamicImag
                 let dir = egui::vec2((b.x - a.x) / len, (b.y - a.y) / len);
                 let size = style.width * 4.0 + 6.0;
                 let [w1, w2] = arrow_head_points(*b, dir, size);
-                let tri = vec![
-                    imageproc::point::Point::new(b.x as i32, b.y as i32),
-                    imageproc::point::Point::new(w1.x as i32, w1.y as i32),
-                    imageproc::point::Point::new(w2.x as i32, w2.y as i32),
-                ];
-                draw_polygon_mut(&mut img, &tri, to_rgba(style.effective_color()));
+                for wing in [w1, w2] {
+                    let edge = Shape::Line {
+                        a: *b,
+                        b: wing,
+                        style: *style,
+                    };
+                    burn_one(&mut img, &edge);
+                }
             }
             Shape::Pencil { points, style } => {
                 for win in points.windows(2) {
@@ -492,6 +506,33 @@ mod tests {
         let out = burn(&img, &[shape]);
         assert_eq!(out.dimensions(), (64, 64));
         assert_ne!(out.to_rgba8(), img.to_rgba8());
+    }
+
+    #[test]
+    fn burn_diagonal_line_is_antialiased() {
+        let img = white_image(120, 100);
+        let shape = Shape::Line {
+            a: egui::pos2(10.0, 10.0),
+            b: egui::pos2(110.0, 90.0),
+            style: Style {
+                width: 5.0,
+                ..red_style()
+            },
+        };
+        let out = burn(&img, &[shape]).to_rgba8();
+        // Fringe = blended edge pixels: neither background-white nor solid line-red.
+        let fringe = out
+            .pixels()
+            .filter(|p| {
+                let is_white = p[0] > 240 && p[1] > 240 && p[2] > 240;
+                let is_solid_red = p[0] > 200 && p[1] < 100 && p[2] < 100;
+                !is_white && !is_solid_red
+            })
+            .count();
+        assert!(
+            fringe > 50,
+            "expected antialiased fringe along diagonal, found {fringe}"
+        );
     }
 
     #[test]
