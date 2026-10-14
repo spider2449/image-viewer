@@ -36,6 +36,8 @@ pub struct AnnotateState {
     pub style: Style,
     pub draft: Option<Draft>,
     pub text_buffer: String,
+    // BlurRegion tool effect: false = Blur, true = Mosaic.
+    pub mosaic: bool,
 }
 
 impl AnnotateState {
@@ -99,7 +101,11 @@ pub fn commit_draft(state: &mut AnnotateState) {
         },
         Tool::BlurRegion => Shape::BlurRegion {
             rect: shapes::ImgRect::from_points(d.start, d.current),
-            kind: shapes::BlurKind::Blur,
+            kind: if state.mosaic {
+                shapes::BlurKind::Mosaic
+            } else {
+                shapes::BlurKind::Blur
+            },
         },
         Tool::Text => {
             if state.text_buffer.trim().is_empty() {
@@ -134,6 +140,29 @@ mod tests {
         commit_draft(&mut s);
         assert!(s.shapes.is_empty());
         assert!(s.draft.is_none());
+    }
+
+    #[test]
+    fn mosaic_flag_selects_mosaic_region() {
+        let mut s = AnnotateState::new();
+        s.active = true;
+        s.tool = Tool::BlurRegion;
+        s.mosaic = true;
+        s.draft = Some(Draft {
+            tool: Tool::BlurRegion,
+            start: egui::pos2(0.0, 0.0),
+            current: egui::pos2(20.0, 20.0),
+            points: vec![],
+        });
+        commit_draft(&mut s);
+        assert_eq!(s.shapes.len(), 1);
+        assert!(matches!(
+            s.shapes[0],
+            Shape::BlurRegion {
+                kind: shapes::BlurKind::Mosaic,
+                ..
+            }
+        ));
     }
 
     #[test]
