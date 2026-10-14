@@ -405,6 +405,8 @@ fn draw_image(
     }
 
     let crop_active = app.editor_state.crop_active;
+    let annot_active = app.editor_state.annotate.active;
+    let zoom = app.viewer_state.zoom;
     let drag = ui.interact(
         egui::Rect::from_min_size(image_rect.min, available),
         egui::Id::new("viewer_image_drag"),
@@ -422,6 +424,8 @@ fn draw_image(
                 app.editor_state.crop_end = Some(screen_to_image_pos(pos, draw_rect, tex_size));
             }
         }
+    } else if annot_active {
+        handle_annotate_drag(app, &drag, draw_rect, tex_size, mouse_pos, zoom);
     } else if drag.dragged() {
         app.viewer_state.pan_offset += drag.drag_delta();
     }
@@ -470,6 +474,30 @@ fn draw_image(
         }
     }
 
+    // Annotation overlay (FastStone-style vector objects).
+    {
+        let ann = &app.editor_state.annotate;
+        if ann.active || !ann.shapes.is_empty() {
+            let to_screen = |p: egui::Pos2| image_to_screen_pos(p, draw_rect, tex_size);
+            crate::annotate::render::paint_shapes(
+                ui.painter(),
+                &ann.shapes,
+                ann.selected,
+                app.viewer_state.zoom,
+                to_screen,
+            );
+            if let Some(d) = &ann.draft {
+                crate::annotate::render::paint_draft(
+                    ui.painter(),
+                    d,
+                    ann.style,
+                    app.viewer_state.zoom,
+                    to_screen,
+                );
+            }
+        }
+    }
+
     // Styled info overlay
     if app.viewer_state.show_info {
         let info_text = format!(
@@ -504,6 +532,67 @@ fn ctx_input(ctx: &egui::Context) -> (Option<egui::Pos2>, Vec2) {
     ctx.input(|i| (i.pointer.hover_pos(), i.raw_scroll_delta))
 }
 
+fn screen_delta_to_image(delta: egui::Vec2, zoom: f32) -> egui::Vec2 {
+    delta / zoom.max(1e-3)
+}
+
+fn handle_annotate_drag(
+    app: &mut App,
+    drag: &egui::Response,
+    draw_rect: egui::Rect,
+    tex_size: Vec2,
+    mouse_pos: Option<egui::Pos2>,
+    zoom: f32,
+) {
+    use crate::annotate::{commit_draft, Draft, Tool};
+    let ann = &mut app.editor_state.annotate;
+    if ann.tool == Tool::Select {
+        if drag.drag_started() {
+            ann.selected = mouse_pos.and_then(|pos| {
+                let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
+                ann.shapes
+                    .iter()
+                    .rposition(|s| s.hit_test(img_pos, 8.0 / zoom.max(1e-3)))
+            });
+        } else if drag.dragged() {
+            if let Some(i) = ann.selected {
+                if let Some(shape) = ann.shapes.get_mut(i) {
+                    shape.translate(screen_delta_to_image(drag.drag_delta(), zoom));
+                }
+            }
+        }
+        return;
+    }
+    if drag.drag_started() {
+        if let Some(pos) = mouse_pos {
+            let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
+            ann.draft = Some(Draft {
+                tool: ann.tool,
+                start: img_pos,
+                current: img_pos,
+                points: vec![img_pos],
+            });
+        }
+    } else if drag.dragged() {
+        if let (Some(d), Some(pos)) = (ann.draft.as_mut(), mouse_pos) {
+            let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
+            d.current = img_pos;
+            if d.tool == Tool::Pencil {
+                let far_enough = d
+                    .points
+                    .last()
+                    .map_or(true, |last| (*last - img_pos).length() >= 1.0);
+                if far_enough {
+                    d.points.push(img_pos);
+                }
+            }
+        }
+    }
+    if drag.drag_stopped() {
+        commit_draft(ann);
+    }
+}
+
 fn screen_to_image_pos(pos: egui::Pos2, draw_rect: egui::Rect, tex_size: Vec2) -> egui::Pos2 {
     let rel = (pos - draw_rect.min) / draw_rect.size() * tex_size;
     egui::pos2(rel.x.clamp(0.0, tex_size.x), rel.y.clamp(0.0, tex_size.y))
@@ -527,6 +616,14 @@ fn display_size(texture_size: Vec2, zoom: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screen_delta_converts_by_zoom() {
+        assert_eq!(
+            screen_delta_to_image(egui::vec2(10.0, -6.0), 2.0),
+            egui::vec2(5.0, -3.0)
+        );
+    }
 
     #[test]
     fn test_large_image_fit_uses_absolute_scale() {
