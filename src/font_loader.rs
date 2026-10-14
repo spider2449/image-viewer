@@ -1,7 +1,6 @@
 use egui::FontData;
-use std::path::Path;
 
-pub fn load_cjk_font() -> Option<FontData> {
+pub fn cjk_font_path() -> Option<std::path::PathBuf> {
     let candidates: &[&str] = if cfg!(target_os = "windows") {
         &[
             "C:\\Windows\\Fonts\\msyh.ttc",
@@ -25,13 +24,16 @@ pub fn load_cjk_font() -> Option<FontData> {
         ]
     };
 
-    for path in candidates {
-        let p = Path::new(path);
-        if p.exists() {
-            if let Ok(data) = std::fs::read(p) {
-                return Some(FontData::from_owned(data));
-            }
-        }
-    }
-    None
+    candidates
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists())
+}
+
+pub fn cjk_font_bytes() -> Option<Vec<u8>> {
+    cjk_font_path().and_then(|p| std::fs::read(p).ok())
+}
+
+pub fn load_cjk_font() -> Option<FontData> {
+    cjk_font_bytes().map(FontData::from_owned)
 }

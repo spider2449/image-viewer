@@ -171,10 +171,11 @@ pub fn paint_draft(
     paint_shape(painter, &preview, zoom, &to_screen);
 }
 
+use ab_glyph::{FontArc, PxScale};
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_filled_ellipse_mut, draw_filled_rect_mut, draw_hollow_ellipse_mut,
-    draw_hollow_rect_mut, draw_polygon_mut,
+    draw_hollow_rect_mut, draw_polygon_mut, draw_text_mut,
 };
 use imageproc::rect::Rect as IRect;
 
@@ -293,6 +294,33 @@ fn burn_region(img: &mut RgbaImage, r: IRect, kind: super::shapes::BlurKind) {
     }
 }
 
+fn load_burn_font() -> Option<FontArc> {
+    let bytes = crate::font_loader::cjk_font_bytes()?;
+    FontArc::try_from_vec(bytes).ok()
+}
+
+fn burn_text(img: &mut RgbaImage, at: egui::Pos2, text: &str, style: super::shapes::Style) {
+    let Some(font) = load_burn_font() else {
+        eprintln!("annotate: no CJK font found, skipping text burn");
+        return;
+    };
+    let scale = PxScale::from(style.font_size.max(4.0));
+    let color = to_rgba(style.effective_color());
+    let mut y = at.y.max(0.0);
+    for line in text.lines() {
+        draw_text_mut(
+            img,
+            color,
+            at.x.max(0.0) as i32,
+            y as i32,
+            scale,
+            &font,
+            line,
+        );
+        y += style.font_size * 1.2;
+    }
+}
+
 // Rasterize shapes onto a copy of `base`. Never panics on geometry.
 pub fn burn(base: &DynamicImage, shapes: &[super::shapes::Shape]) -> DynamicImage {
     use super::shapes::Shape;
@@ -371,9 +399,8 @@ pub fn burn(base: &DynamicImage, shapes: &[super::shapes::Shape]) -> DynamicImag
                 hl.opacity = (hl.opacity * 0.4_f32).clamp(0.05_f32, 0.6_f32);
                 blend_rect(&mut img, r, to_rgba(hl.effective_color()));
             }
-            Shape::Text { .. } => {
-                // Text rendering lands in Task 6 (needs the burn font);
-                // until then Text shapes are skipped so every commit compiles.
+            Shape::Text { at, text, style } => {
+                burn_text(&mut img, *at, text, *style);
             }
             Shape::BlurRegion { rect, kind } => {
                 let Some(r) = clamp_rect(*rect, w, h) else {
@@ -465,5 +492,38 @@ mod tests {
         let out = burn(&img, &[shape]);
         assert_eq!(out.dimensions(), (64, 64));
         assert_ne!(out.to_rgba8(), img.to_rgba8());
+    }
+
+    #[test]
+    fn burn_text_never_panics_and_keeps_size() {
+        let img = white_image(200, 100);
+        let shape = Shape::Text {
+            at: egui::pos2(10.0, 10.0),
+            text: "Hi 測試".to_string(),
+            style: Style {
+                font_size: 24.0,
+                ..red_style()
+            },
+        };
+        let out = burn(&img, &[shape]); // must not panic with or without a system font
+        assert_eq!(out.dimensions(), (200, 100));
+    }
+
+    #[test]
+    fn burn_text_renders_when_font_available() {
+        if load_burn_font().is_none() {
+            eprintln!("SKIP: no CJK font on this machine");
+            return;
+        }
+        let img = white_image(200, 100);
+        let shape = Shape::Text {
+            at: egui::pos2(10.0, 10.0),
+            text: "Hi".to_string(),
+            style: Style {
+                font_size: 32.0,
+                ..red_style()
+            },
+        };
+        assert_ne!(burn(&img, &[shape]).to_rgba8(), img.to_rgba8());
     }
 }
