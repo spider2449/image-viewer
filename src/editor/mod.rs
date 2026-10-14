@@ -30,6 +30,7 @@ pub struct State {
     pub save_format: &'static str,
     pub save_jpeg_quality: u8,
     pub save_as_filename: String,
+    pub annotate: crate::annotate::AnnotateState,
 }
 
 impl State {
@@ -57,6 +58,7 @@ impl State {
             save_format: "png",
             save_jpeg_quality: 90,
             save_as_filename: String::new(),
+            annotate: crate::annotate::AnnotateState::new(),
         }
     }
 
