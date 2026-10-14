@@ -630,7 +630,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     });
 }
 
-fn apply_annotations(app: &mut App, ctx: &egui::Context) {
+pub(crate) fn apply_annotations(app: &mut App, ctx: &egui::Context) {
     let base = match app.editor_state.current_image.as_ref() {
         Some(i) => i.clone(),
         None => return,

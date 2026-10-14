@@ -426,6 +426,56 @@ fn draw_image(
         }
     } else if annot_active {
         handle_annotate_drag(app, &drag, draw_rect, tex_size, mouse_pos, zoom);
+        // Middle-button drag pans the image while the left button draws.
+        if drag.hovered() {
+            let delta = ui.ctx().input(|i| {
+                if i.pointer.middle_down() {
+                    Some(i.pointer.delta())
+                } else {
+                    None
+                }
+            });
+            if let Some(d) = delta {
+                app.viewer_state.pan_offset += d;
+            }
+        }
+        // Right-click action menu in draw mode.
+        drag.context_menu(|ui| {
+            let ctx = ui.ctx().clone();
+            let has_shapes = !app.editor_state.annotate.shapes.is_empty();
+            let has_selection = app.editor_state.annotate.selected.is_some();
+            if ui
+                .add_enabled(has_shapes, egui::Button::new("Apply"))
+                .on_hover_text("Burn annotations into the image as one undo step")
+                .clicked()
+            {
+                crate::editor::apply_annotations(app, &ctx);
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Delete Selected"))
+                .clicked()
+            {
+                if let Some(i) = app.editor_state.annotate.selected.take() {
+                    if i < app.editor_state.annotate.shapes.len() {
+                        app.editor_state.annotate.shapes.remove(i);
+                    }
+                }
+                ui.close_menu();
+            }
+            if ui.add_enabled(has_shapes, egui::Button::new("Clear")).clicked() {
+                app.editor_state.annotate.clear();
+                app.editor_state.annotate.active = true;
+                ui.close_menu();
+            }
+            ui.separator();
+            if ui.button("Exit Draw Mode").clicked() {
+                app.editor_state.annotate.active = false;
+                app.editor_state.annotate.draft = None;
+                app.editor_state.annotate.selected = None;
+                ui.close_menu();
+            }
+        });
     } else if drag.dragged() {
         app.viewer_state.pan_offset += drag.drag_delta();
     }
