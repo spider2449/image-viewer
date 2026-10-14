@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "image-viewer"
-version = "0.1.68"
+version = "0.1.74"
 dependencies = [
  "ab_glyph",
  "arboard",
