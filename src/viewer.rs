@@ -139,18 +139,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.viewer_state.slideshow_timer = 0.0;
                     }
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.colored_label(
-                            colors.text_secondary,
-                            format!("{}/{}", app.selected_image_index + 1, app.image_files.len()),
-                        );
-                        if let Some(name) = path.file_name() {
-                            ui.colored_label(
-                                colors.text_secondary,
-                                name.to_string_lossy().to_string(),
-                            );
-                        }
-                    });
                 });
             });
     }
@@ -225,7 +213,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         format!("{sz} B")
                     };
                     ui.colored_label(colors.text_secondary, size_str);
+                    ui.separator();
                 }
+                ui.colored_label(
+                    colors.text_secondary,
+                    format!("{}/{}", app.selected_image_index + 1, app.image_files.len()),
+                );
             });
         });
 
