@@ -51,6 +51,11 @@ src/
   editor/
     mod.rs            — right panel: undo/redo, crop, rotate/flip, resize, save as
     operations.rs     — EditOp enum + apply() dispatch
+  annotate/
+    mod.rs            — AnnotateState: tool, undo/redo of the object layer, stamp placement
+    shapes.rs         — Shape/Style models, hit-test, resize handles, callout geometry
+    icons.rs          — painter-drawn tool button icons
+    render.rs         — egui overlay painter + CPU burn (coverage-mask rasterizer)
   batch/
     mod.rs            — batch processing UI and orchestration
     operations.rs     — batch operation definitions
@@ -61,6 +66,7 @@ src/
 - **"Fit" zoom** correctly computed and stored in `viewer_state.fit_zoom` during `draw_image`. Previously set zoom to 1.0 (same as "1:1") — don't regress this.
 - **JPEG quality** requires `image::codecs::jpeg::JpegEncoder::new_with_quality` — `save_with_format` does not support quality.
 - **Crop UI** exists in editor panel but viewer has no crop-drag interaction. `crop_start`/`crop_end` must be set by viewer mouse handling before `Apply Crop` works.
+- **Annotation overlay vs burn must stay in sync** — `paint_shape` (egui) and `burn_shape` (CPU) draw the same object twice; change geometry in shared helpers (`arrow_geometry`, `dash_pattern`, `callout_tail_polygon`) rather than in one side only. Burn composites each object once through a max-combined coverage mask so opacity never double-blends.
 - **Textures cleared on `scan_folder`** — `app.textures.clear()` runs before re-scanning a directory. Still grows unboundedly within a single folder if user opens every image.
 - **Editor's `save_as`** writes alongside source file with new extension (no file dialog).
 - **Drive roots hardcoded** to `C:\`, `D:\`, `E:\` on Windows (`browser/mod.rs`).

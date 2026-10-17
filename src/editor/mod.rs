@@ -337,7 +337,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 egui::CollapsingHeader::new(
                     egui::RichText::new("Annotate").strong().color(colors.accent),
                 )
-                .default_open(false)
+                .default_open(true)
                 .show(ui, |ui| annotate_controls(app, ctx, ui));
 
                 ui.separator();
@@ -434,6 +434,13 @@ fn handle_history_shortcuts(app: &mut App, ctx: &egui::Context) {
         let undo = ctrl && !shift && input.key_pressed(egui::Key::Z);
         (undo, redo)
     });
+    // Un-burned annotation objects have their own history, checked first.
+    let ann = &mut app.editor_state.annotate;
+    if ann.active || !ann.shapes.is_empty() {
+        if undo_requested && ann.undo() || redo_requested && ann.redo() {
+            return;
+        }
+    }
     if redo_requested && app.editor_state.adjustments.is_neutral() {
         redo(app, ctx);
     } else if undo_requested {
@@ -525,22 +532,23 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     use crate::annotate::Tool;
     let tools = [
         (Tool::Select, "Select"),
+        (Tool::Pencil, "Pencil"),
         (Tool::Line, "Line"),
         (Tool::Arrow, "Arrow"),
         (Tool::Rect, "Rect"),
         (Tool::Ellipse, "Ellipse"),
-        (Tool::Pencil, "Pencil"),
         (Tool::Highlight, "Highlight"),
         (Tool::Text, "Text"),
+        (Tool::Callout, "Callout"),
+        (Tool::Step, "Step #"),
         (Tool::BlurRegion, "Blur"),
     ];
     ui.horizontal_wrapped(|ui| {
         for (tool, label) in tools {
-            if ui
-                .selectable_label(app.editor_state.annotate.tool == tool, label)
-                .clicked()
-            {
+            let selected = app.editor_state.annotate.active && app.editor_state.annotate.tool == tool;
+            if crate::annotate::icons::tool_button(ui, tool, selected, label).clicked() {
                 app.editor_state.annotate.tool = tool;
+                app.editor_state.annotate.draft = None;
                 if !app.editor_state.annotate.active {
                     app.editor_state.annotate.active = true;
                     // Annotate and crop modes are mutually exclusive.
@@ -549,85 +557,170 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
             }
         }
     });
-    if ui
-        .selectable_label(app.editor_state.annotate.active, "Draw Mode")
-        .clicked()
-    {
-        app.editor_state.annotate.active = !app.editor_state.annotate.active;
-        if app.editor_state.annotate.active {
-            app.editor_state.crop_active = false;
-        } else {
-            app.editor_state.annotate.draft = None;
-            app.editor_state.annotate.selected = None;
+    ui.horizontal(|ui| {
+        if ui
+            .selectable_label(app.editor_state.annotate.active, "Draw Mode")
+            .clicked()
+        {
+            app.editor_state.annotate.active = !app.editor_state.annotate.active;
+            if app.editor_state.annotate.active {
+                app.editor_state.crop_active = false;
+            } else {
+                app.editor_state.annotate.draft = None;
+                app.editor_state.annotate.selected = None;
+            }
         }
-    }
-    let style = &mut app.editor_state.annotate.style;
+        let ann = &mut app.editor_state.annotate;
+        if ui.add_enabled(ann.can_undo(), egui::Button::new("Undo")).clicked() {
+            ann.undo();
+        }
+        if ui.add_enabled(ann.can_redo(), egui::Button::new("Redo")).clicked() {
+            ann.redo();
+        }
+    });
+    ui.small(
+        "Left: draw / drag handles (blue knob rotates)  |  Ctrl+drag: move object  |  \
+         Middle: pan  |  Right: menu  |  Del: delete  |  Esc: back out",
+    );
+
+    // Style controls edit the panel style and, live, the selected object.
+    let mut style_changed = false;
+    let ann = &mut app.editor_state.annotate;
     ui.horizontal(|ui| {
         ui.label("Color:");
-        let mut color = style.color;
+        let mut color = ann.style.color;
         if ui.color_edit_button_srgba(&mut color).changed() {
-            style.color = color;
+            ann.style.color = color;
+            style_changed = true;
+        }
+        for swatch in [
+            egui::Color32::from_rgb(230, 40, 40),
+            egui::Color32::from_rgb(255, 150, 0),
+            egui::Color32::from_rgb(255, 220, 0),
+            egui::Color32::from_rgb(50, 190, 80),
+            egui::Color32::from_rgb(40, 120, 240),
+            egui::Color32::BLACK,
+            egui::Color32::WHITE,
+        ] {
+            if ui
+                .add(egui::Button::new("").fill(swatch).min_size(egui::vec2(16.0, 16.0)))
+                .clicked()
+            {
+                ann.style.color = swatch;
+                style_changed = true;
+            }
         }
     });
-    ui.add(egui::Slider::new(&mut style.width, 1.0..=30.0).text("Width"));
-    ui.add(egui::Slider::new(&mut style.opacity, 0.05..=1.0).text("Opacity"));
-    ui.add(egui::Slider::new(&mut style.font_size, 8.0..=120.0).text("Font size"));
-    ui.checkbox(&mut style.filled, "Fill rect / ellipse");
-    if app.editor_state.annotate.tool == Tool::BlurRegion {
-        ui.checkbox(&mut app.editor_state.annotate.mosaic, "Mosaic (else blur)");
+    style_changed |= ui
+        .add(egui::Slider::new(&mut ann.style.width, 1.0..=30.0).text("Width"))
+        .changed();
+    style_changed |= ui
+        .add(egui::Slider::new(&mut ann.style.opacity, 0.05..=1.0).text("Opacity"))
+        .changed();
+    style_changed |= ui
+        .add(egui::Slider::new(&mut ann.style.font_size, 8.0..=120.0).text("Font size"))
+        .changed();
+    ui.horizontal_wrapped(|ui| {
+        style_changed |= ui.checkbox(&mut ann.style.filled, "Fill").changed();
+        style_changed |= ui.checkbox(&mut ann.style.outline, "Border").changed();
+        style_changed |= ui.checkbox(&mut ann.style.dashed, "Dashed").changed();
+        style_changed |= ui.checkbox(&mut ann.style.shadow, "Shadow").changed();
+    });
+    if ann.style.filled {
+        ui.horizontal(|ui| {
+            ui.label("Fill color:");
+            let mut fill = ann.style.fill_color;
+            if ui.color_edit_button_srgba(&mut fill).changed() {
+                ann.style.fill_color = fill;
+                style_changed = true;
+            }
+        });
     }
-    if app.editor_state.annotate.tool == Tool::Text {
+    if style_changed {
+        // One slider drag = one undo step: snapshot before the first change only.
+        if ann.selected.is_some() && !ann.style_edit_open {
+            ann.snapshot();
+        }
+        ann.style_edit_open = true;
+        ann.apply_style_to_selected();
+    }
+    if !ctx.input(|i| i.pointer.any_down()) {
+        ann.style_edit_open = false;
+    }
+
+    if ann.tool == Tool::BlurRegion {
+        ui.checkbox(&mut ann.mosaic, "Mosaic (else blur)");
+    }
+    if matches!(ann.tool, Tool::Text | Tool::Callout) {
         ui.add(
-            egui::TextEdit::multiline(&mut app.editor_state.annotate.text_buffer)
-                .hint_text("Text to place (drag on image, or use button)")
+            egui::TextEdit::multiline(&mut ann.text_buffer)
+                .hint_text("Text for the next Text / Callout (click the image to place)")
                 .desired_rows(2),
         );
-        if ui.button("Place Text At Center").clicked()
-            && !app.editor_state.annotate.text_buffer.trim().is_empty()
-        {
-            if let Some(img) = app.editor_state.current_image.as_ref() {
-                let (w, h) = img.dimensions();
-                app.editor_state.annotate.shapes.push(
-                    crate::annotate::shapes::Shape::Text {
-                        at: egui::pos2(w as f32 / 2.0, h as f32 / 2.0),
-                        text: app.editor_state.annotate.text_buffer.clone(),
-                        style: app.editor_state.annotate.style,
-                    },
-                );
-                app.editor_state.annotate.selected =
-                    Some(app.editor_state.annotate.shapes.len() - 1);
+    }
+    if ann.tool == Tool::Step {
+        ui.small("Click the image to drop the next numbered marker.");
+    }
+    // Edit the text of a selected Text / Callout object in place.
+    let selected_text = ann
+        .selected
+        .and_then(|i| ann.shapes.get(i))
+        .and_then(|s| match s {
+            crate::annotate::Shape::Text { text, .. }
+            | crate::annotate::Shape::Callout { text, .. } => Some(text.clone()),
+            _ => None,
+        });
+    if let Some(mut buf) = selected_text {
+        ui.label("Selected text:");
+        let resp = ui.add(egui::TextEdit::multiline(&mut buf).desired_rows(2));
+        if resp.gained_focus() {
+            ann.snapshot();
+        }
+        if resp.changed() {
+            if let Some(text) = ann
+                .selected
+                .and_then(|i| ann.shapes.get_mut(i))
+                .and_then(|s| s.text_mut())
+            {
+                *text = buf;
             }
         }
     }
-    ui.label(format!(
-        "{} object(s)",
-        app.editor_state.annotate.shapes.len()
-    ));
-    ui.horizontal(|ui| {
-        let has = !app.editor_state.annotate.shapes.is_empty();
-        if ui
-            .add_enabled(has, egui::Button::new("Apply"))
-            .on_hover_text("Burn annotations into the image as one undo step")
-            .clicked()
-        {
-            apply_annotations(app, ctx);
+
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        let has_sel = ann.selected.is_some();
+        if ui.add_enabled(has_sel, egui::Button::new("Duplicate")).clicked() {
+            ann.duplicate_selected();
         }
-        if ui
-            .add_enabled(has, egui::Button::new("Delete Selected"))
-            .clicked()
-        {
-            if let Some(i) = app.editor_state.annotate.selected.take() {
-                if i < app.editor_state.annotate.shapes.len() {
-                    app.editor_state.annotate.shapes.remove(i);
-                }
-            }
+        if ui.add_enabled(has_sel, egui::Button::new("Forward")).clicked() {
+            ann.reorder_selected(true);
         }
-        if ui.add_enabled(has, egui::Button::new("Clear")).clicked() {
-            // Stay in draw mode so the user can keep sketching.
-            app.editor_state.annotate.clear();
-            app.editor_state.annotate.active = true;
+        if ui.add_enabled(has_sel, egui::Button::new("Backward")).clicked() {
+            ann.reorder_selected(false);
+        }
+        if ui.add_enabled(has_sel, egui::Button::new("Delete")).clicked() {
+            ann.delete_selected();
         }
     });
+    ui.label(format!("{} object(s)", ann.shapes.len()));
+    let has = !ann.shapes.is_empty();
+    let (apply, clear) = ui
+        .horizontal(|ui| {
+            (
+                ui.add_enabled(has, egui::Button::new("Apply"))
+                    .on_hover_text("Burn annotations into the image as one undo step")
+                    .clicked(),
+                // Clear keeps draw mode on so the user can keep sketching.
+                ui.add_enabled(has, egui::Button::new("Clear")).clicked(),
+            )
+        })
+        .inner;
+    if apply {
+        apply_annotations(app, ctx);
+    } else if clear {
+        app.editor_state.annotate.clear_objects();
+    }
 }
 
 pub(crate) fn apply_annotations(app: &mut App, ctx: &egui::Context) {
