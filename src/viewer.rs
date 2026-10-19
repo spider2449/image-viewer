@@ -453,6 +453,21 @@ fn draw_image(
                 app.viewer_state.pan_offset += d;
             }
         }
+        // Remember which curve anchor (if any) the right click landed on.
+        if drag.secondary_clicked() {
+            let tolerance = 8.0 / zoom.max(1e-3);
+            let ann = &mut app.editor_state.annotate;
+            ann.menu_anchor = mouse_pos.and_then(|m| {
+                let pos = screen_to_image_pos(m, draw_rect, tex_size);
+                ann.selected.and_then(|i| ann.shapes.get(i)).and_then(|s| match s {
+                    crate::annotate::Shape::Pencil { .. } => s
+                        .handles()
+                        .iter()
+                        .position(|h| (*h - pos).length() <= tolerance),
+                    _ => None,
+                })
+            });
+        }
         // Right-click action menu in draw mode.
         drag.context_menu(|ui| {
             let ctx = ui.ctx().clone();
@@ -466,6 +481,14 @@ fn draw_image(
                 crate::editor::apply_annotations(app, &ctx);
                 ui.close_menu();
             }
+            if ui
+                .button("Save")
+                .on_hover_text("Burn annotations in and overwrite the opened file")
+                .clicked()
+            {
+                crate::editor::request_save(app);
+                ui.close_menu();
+            }
             let ann = &mut app.editor_state.annotate;
             ui.horizontal(|ui| {
                 if ui.add_enabled(ann.can_undo(), egui::Button::new("Undo")).clicked() {
@@ -476,6 +499,20 @@ fn draw_image(
                 }
             });
             ui.separator();
+            if let Some(anchor) = ann.menu_anchor {
+                if ui
+                    .add_enabled(
+                        ann.can_delete_anchor(anchor),
+                        egui::Button::new("Delete Point"),
+                    )
+                    .on_hover_text("Remove this curve point (a curve keeps at least 2)")
+                    .clicked()
+                {
+                    ann.delete_anchor(anchor);
+                    ann.menu_anchor = None;
+                    ui.close_menu();
+                }
+            }
             if ui
                 .add_enabled(has_selection, egui::Button::new("Duplicate"))
                 .clicked()

@@ -30,6 +30,8 @@ pub struct State {
     pub save_format: &'static str,
     pub save_jpeg_quality: u8,
     pub save_as_filename: String,
+    // Set when Save was requested; the overwrite confirmation dialog is showing.
+    pub confirm_overwrite: bool,
     pub annotate: crate::annotate::AnnotateState,
 }
 
@@ -58,6 +60,7 @@ impl State {
             save_format: "png",
             save_jpeg_quality: 90,
             save_as_filename: String::new(),
+            confirm_overwrite: false,
             annotate: crate::annotate::AnnotateState::new(),
         }
     }
@@ -181,6 +184,8 @@ impl State {
 }
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
+    // Also reachable from the draw-mode context menu when the panel is hidden.
+    show_overwrite_dialog(app, ctx);
     if !app.editor_state.visible {
         return;
     }
@@ -366,7 +371,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     egui::RichText::new("Save As").strong().color(colors.accent),
                 )
                 .default_open(true)
-                .show(ui, |ui| save_controls(app, ui));
+                .show(ui, |ui| save_controls(app, ctx, ui));
             });
         });
 
@@ -839,7 +844,7 @@ fn resize_controls(
     }
 }
 
-fn save_controls(app: &mut App, ui: &mut egui::Ui) {
+fn save_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     egui::ComboBox::new("save_format", "")
         .selected_text(app.editor_state.save_format.to_uppercase())
         .show_ui(ui, |ui| {
@@ -854,9 +859,18 @@ fn save_controls(app: &mut App, ui: &mut egui::Ui) {
     egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
         .hint_text("Enter filename")
         .show(ui);
-    if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
-        save_as(app);
-    }
+    ui.horizontal(|ui| {
+        if ui
+            .button("Save")
+            .on_hover_text("Overwrite the opened file (annotations are burned in)")
+            .clicked()
+        {
+            request_save(app);
+        }
+        if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
+            save_as(app, ctx);
+        }
+    });
 }
 
 fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage) {
@@ -995,13 +1009,71 @@ fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-fn save_as(app: &mut App) {
-    app.editor_state.commit_adjustments();
-    let img = match &app.editor_state.current_image {
-        Some(i) => i.clone(),
-        None => return,
-    };
+// Overwrite the opened file, keeping its format. Formats this app cannot encode
+// (gif, tiff, exr) are written next to it as PNG instead.
+fn save_in_place_target(app: &App) -> Option<(&'static str, PathBuf)> {
+    let base_path = app.image_files.get(app.selected_image_index)?.clone();
+    let ext = base_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    Some(match ext.as_str() {
+        "jpg" | "jpeg" => ("jpeg", base_path),
+        "png" => ("png", base_path),
+        "bmp" => ("bmp", base_path),
+        "webp" => ("webp", base_path),
+        _ => ("png", base_path.with_extension("png")),
+    })
+}
 
+// Ask for confirmation before overwriting; the dialog calls `save_in_place`.
+pub(crate) fn request_save(app: &mut App) {
+    app.editor_state.confirm_overwrite = true;
+}
+
+fn save_in_place(app: &mut App, ctx: &egui::Context) {
+    if let Some((format, target)) = save_in_place_target(app) {
+        write_current_image(app, ctx, &target, format);
+    }
+}
+
+fn show_overwrite_dialog(app: &mut App, ctx: &egui::Context) {
+    if !app.editor_state.confirm_overwrite {
+        return;
+    }
+    let Some((_, target)) = save_in_place_target(app) else {
+        app.editor_state.confirm_overwrite = false;
+        return;
+    };
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let will_replace = target.exists();
+    egui::Window::new("Save")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            if will_replace {
+                ui.label(format!("Overwrite \"{name}\"?"));
+                ui.label("The original file will be replaced and this cannot be undone.");
+            } else {
+                ui.label(format!("Save as \"{name}\"?"));
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Save").clicked() {
+                    app.editor_state.confirm_overwrite = false;
+                    save_in_place(app, ctx);
+                }
+                if ui.button("Cancel").clicked() {
+                    app.editor_state.confirm_overwrite = false;
+                }
+            });
+        });
+}
+
+fn save_as(app: &mut App, ctx: &egui::Context) {
     let base_path = match app.image_files.get(app.selected_image_index) {
         Some(p) => p.clone(),
         None => return,
@@ -1011,6 +1083,28 @@ fn save_as(app: &mut App) {
     let new_ext = crate::format_ext::format_to_extension(save_format);
     let filename = app.editor_state.save_as_filename.clone();
     let new_name = base_path.with_file_name(format!("{}.{}", filename, new_ext));
+    write_current_image(app, ctx, &new_name, save_format);
+}
+
+// Burn pending annotations and adjustments, write the result to `new_name`, then
+// rescan the folder and show the saved file.
+fn write_current_image(
+    app: &mut App,
+    ctx: &egui::Context,
+    new_name: &std::path::Path,
+    save_format: &'static str,
+) {
+    apply_annotations(app, ctx);
+    app.editor_state.commit_adjustments();
+    let img = match &app.editor_state.current_image {
+        Some(i) => i.clone(),
+        None => return,
+    };
+    let filename = new_name
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let new_name = new_name.to_path_buf();
     match crate::format_ext::save_image(
         &img,
         &new_name,

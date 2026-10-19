@@ -1,7 +1,7 @@
 // Annotation rendering: egui overlay painting + CPU burn.
 
 use super::shapes::{
-    callout_padding, callout_rect, callout_tail_polygon, dist_point_segment, rotate_about,
+    callout_box, callout_tail_outline, callout_text_lines, line_width, dist_point_segment, rotate_about,
     step_radius, ImgRect, Shape, Style, HANDLE_RADIUS_PX,
 };
 use eframe::egui;
@@ -271,7 +271,10 @@ fn paint_shape(
             ));
         }
         Shape::Pencil { points, style } => {
-            let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
+            let pts: Vec<egui::Pos2> = super::shapes::spline_points(points)
+                .iter()
+                .map(|p| to_screen(*p))
+                .collect();
             stroke_path(painter, pts, *style, zoom, false);
         }
         Shape::Rect { rect, style } | Shape::Ellipse { rect, style } => {
@@ -334,31 +337,44 @@ fn paint_shape(
         }
         Shape::Callout {
             at,
+            size,
             text,
             tail,
             style,
         } => {
-            let rect = callout_rect(*at, text, style.font_size);
+            let rect = callout_box(*at, *size);
             let screen_rect = egui::Rect::from_min_max(to_screen(rect.min), to_screen(rect.max));
             let radius = (style.font_size * 0.4 * zoom).clamp(0.0, 60.0) as u8;
             let fill = style.effective_color();
             painter.rect_filled(screen_rect, egui::CornerRadius::same(radius), fill);
-            if let Some(poly) = callout_tail_polygon(rect, *tail) {
-                painter.add(egui::Shape::convex_polygon(
-                    poly.iter().map(|p| to_screen(*p)).collect(),
-                    fill,
-                    egui::Stroke::NONE,
-                ));
+            if let Some(outline) = callout_tail_outline(rect, *tail) {
+                // Concave outline: fill as a triangle fan around the pivot (element 0).
+                let mut mesh = egui::Mesh::default();
+                for p in &outline {
+                    mesh.colored_vertex(to_screen(*p), fill);
+                }
+                for i in 1..outline.len() as u32 - 1 {
+                    mesh.add_triangle(0, i, i + 1);
+                }
+                painter.add(egui::Shape::mesh(mesh));
             }
             if !silhouette {
-                let pad = callout_padding(style.font_size);
-                painter.text(
-                    to_screen(egui::pos2(at.x + pad, at.y + pad)),
-                    egui::Align2::LEFT_TOP,
-                    text,
-                    egui::FontId::proportional((style.font_size * zoom).max(4.0)),
-                    style.on_color(),
-                );
+                // Each line is centered on the box's vertical axis; the block is
+                // centered vertically.
+                let (lines, top) = callout_text_lines(text, *size, style.font_size);
+                let line_h = style.font_size * 1.2;
+                for (i, line) in lines.iter().enumerate() {
+                    painter.text(
+                        to_screen(egui::pos2(
+                            at.x + size.x / 2.0,
+                            at.y + top + i as f32 * line_h,
+                        )),
+                        egui::Align2::CENTER_TOP,
+                        line,
+                        egui::FontId::proportional((style.font_size * zoom).max(4.0)),
+                        style.on_color(),
+                    );
+                }
             }
         }
         Shape::Step { at, number, style } => {
@@ -788,7 +804,12 @@ fn burn_shape(img: &mut RgbaImage, shape: &Shape, silhouette: bool) {
         Shape::Pencil { points, style } => {
             let pad = style.width / 2.0 + 2.0;
             if let Some(mut m) = Mask::new(shape.bounding_rect(), pad, w, h) {
-                m.stroke_path(points, style.width, style.dashed, false);
+                m.stroke_path(
+                    &super::shapes::spline_points(points),
+                    style.width,
+                    style.dashed,
+                    false,
+                );
                 m.composite(img, style_rgba(*style));
             }
         }
@@ -831,27 +852,32 @@ fn burn_shape(img: &mut RgbaImage, shape: &Shape, silhouette: bool) {
         }
         Shape::Callout {
             at,
+            size,
             text,
             tail,
             style,
         } => {
-            let rect = callout_rect(*at, text, style.font_size);
+            let rect = callout_box(*at, *size);
             if let Some(mut m) = Mask::new(shape.bounding_rect(), 2.0, w, h) {
                 m.fill_round_rect(rect, style.font_size * 0.4);
-                if let Some(poly) = callout_tail_polygon(rect, *tail) {
-                    m.fill_polygon(&poly);
+                if let Some(outline) = callout_tail_outline(rect, *tail) {
+                    m.fill_polygon(&outline);
                 }
                 m.composite(img, style_rgba(*style));
             }
             if !silhouette {
-                let pad = callout_padding(style.font_size);
-                burn_text(
-                    img,
-                    egui::pos2(at.x + pad, at.y + pad),
-                    text,
-                    style.font_size,
-                    plain_rgba(style.on_color()),
-                );
+                let (lines, top) = callout_text_lines(text, *size, style.font_size);
+                let line_h = style.font_size * 1.2;
+                for (i, line) in lines.iter().enumerate() {
+                    let x = at.x + (size.x - line_width(line, style.font_size)) / 2.0;
+                    burn_text(
+                        img,
+                        egui::pos2(x, at.y + top + i as f32 * line_h),
+                        line,
+                        style.font_size,
+                        plain_rgba(style.on_color()),
+                    );
+                }
             }
         }
         Shape::Step { at, number, style } => {
@@ -1222,6 +1248,7 @@ mod tests {
         let img = white_image(300, 200);
         let shape = Shape::Callout {
             at: egui::pos2(20.0, 20.0),
+            size: crate::annotate::shapes::callout_fit_size("Hi", Style::default().font_size),
             text: "Hi".to_string(),
             tail: egui::pos2(40.0, 150.0),
             style: Style {

@@ -61,6 +61,8 @@ pub struct AnnotateState {
     pub drag_snapped: bool,
     // True while a style control is being dragged, so one gesture = one undo step.
     pub style_edit_open: bool,
+    // Curve anchor under the pointer when the context menu was opened.
+    pub menu_anchor: Option<usize>,
     undo_stack: Vec<Vec<Shape>>,
     redo_stack: Vec<Vec<Shape>>,
 }
@@ -145,6 +147,27 @@ impl AnnotateState {
             self.shapes.remove(i);
         }
         self.selected = None;
+    }
+
+    // Remove one anchor of the selected curve. A curve keeps at least 2 anchors;
+    // use Delete Selected to remove the whole object.
+    pub fn can_delete_anchor(&self, anchor: usize) -> bool {
+        self.selected
+            .and_then(|i| self.shapes.get(i))
+            .is_some_and(|s| matches!(s, Shape::Pencil { points, .. }
+                if points.len() > 2 && anchor < points.len()))
+    }
+
+    pub fn delete_anchor(&mut self, anchor: usize) -> bool {
+        if !self.can_delete_anchor(anchor) {
+            return false;
+        }
+        let i = self.selected.unwrap_or(0);
+        self.snapshot();
+        if let Shape::Pencil { points, .. } = &mut self.shapes[i] {
+            points.remove(anchor);
+        }
+        true
     }
 
     // Copy the selected object, offset a little, and select the copy.
@@ -272,7 +295,8 @@ fn stamp_shape(state: &AnnotateState, tool: Tool, at: egui::Pos2) -> Option<Shap
             } else {
                 state.text_buffer.clone()
             };
-            let rect = shapes::callout_rect(at, &text, style.font_size);
+            let size = shapes::callout_fit_size(&text, style.font_size);
+            let rect = shapes::callout_box(at, size);
             // Default tail points down-left below the box.
             let tail = egui::pos2(
                 rect.min.x + rect.width() * 0.25,
@@ -280,6 +304,7 @@ fn stamp_shape(state: &AnnotateState, tool: Tool, at: egui::Pos2) -> Option<Shap
             );
             Some(Shape::Callout {
                 at,
+                size,
                 text,
                 tail,
                 style,
@@ -333,7 +358,8 @@ pub fn commit_draft(state: &mut AnnotateState) {
             style,
         },
         Tool::Pencil => Shape::Pencil {
-            points: smooth_points(&d.points, 2),
+            // Reduce the freehand trace to a few editable anchors of a vector curve.
+            points: shapes::simplify_rdp(&smooth_points(&d.points, 2), 2.0 + style.width * 0.3),
             style,
         },
         Tool::Highlight => Shape::Highlight {
