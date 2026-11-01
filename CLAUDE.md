@@ -47,7 +47,7 @@ src/
     mod.rs            — side panel (tree) + central panel (grid)
     tree.rs           — folder tree widget (max depth 2, 50 dirs per node)
     grid.rs           — thumbnail grid + list view
-    files.rs          — file ops (rename, delete, copy, open) — unused in UI
+    files.rs          — file ops (rename, delete, copy, open) — used by the grid context menu
   editor/
     mod.rs            — right panel: undo/redo, crop, rotate/flip, resize, save as
     operations.rs     — EditOp enum + apply() dispatch
@@ -67,7 +67,8 @@ src/
 - **JPEG quality** requires `image::codecs::jpeg::JpegEncoder::new_with_quality` — `save_with_format` does not support quality.
 - **Crop UI** exists in editor panel but viewer has no crop-drag interaction. `crop_start`/`crop_end` must be set by viewer mouse handling before `Apply Crop` works.
 - **Annotation overlay vs burn must stay in sync** — `paint_shape` (egui) and `burn_shape` (CPU) draw the same object twice; change geometry in shared helpers (`arrow_geometry`, `dash_pattern`, `callout_tail_polygon`) rather than in one side only. Burn composites each object once through a max-combined coverage mask so opacity never double-blends.
-- **Textures cleared on `scan_folder`** — `app.textures.clear()` runs before re-scanning a directory. Still grows unboundedly within a single folder if user opens every image.
+- **Textures** — `app.textures` is an 8-entry LRU (and is cleared on `scan_folder`), so memory is bounded within a folder.
+- **Batch Resize overwrites originals in place** — the UI requires an explicit "Overwrite" confirmation before starting.
 - **Editor's `save_as`** writes alongside source file with new extension (no file dialog).
-- **Drive roots hardcoded** to `C:\`, `D:\`, `E:\` on Windows (`browser/mod.rs`).
-- **Viewer status bar** reads `std::fs::metadata` each frame — can be slow over network drives.
+- **Drive roots** on Windows are probed `A:\`–`Z:\` and filtered by `exists()` (`browser/mod.rs`).
+- **Viewer status bar** no longer calls `std::fs::metadata` per frame (file info goes through `file_cache.rs`).

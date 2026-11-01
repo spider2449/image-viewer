@@ -259,7 +259,7 @@ impl App {
                         ui.painter().rect_stroke(
                             rect,
                             egui::CornerRadius::same(6),
-                            egui::Stroke::new(if is_current { 2.0 } else { 1.0 }, border),
+                            egui::Stroke::new(if is_current { 2.0 } else { 1.0_f32 }, border),
                             egui::StrokeKind::Outside,
                         );
                         if resp.hovered() {

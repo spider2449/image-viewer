@@ -42,6 +42,8 @@ pub struct State {
     pub resize_width: u32,
     pub resize_height: u32,
     pub resize_lock_aspect: bool,
+    /// Resize overwrites originals in place; holds the operation awaiting user confirmation.
+    pending_resize: Option<Operation>,
     pub running: bool,
     pub progress_current: usize,
     pub progress_total: usize,
@@ -64,6 +66,7 @@ impl State {
             resize_width: 800,
             resize_height: 600,
             resize_lock_aspect: true,
+            pending_resize: None,
             running: false,
             progress_current: 0,
             progress_total: 0,
@@ -303,7 +306,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     );
                     ui.checkbox(&mut app.batch_state.resize_lock_aspect, "Lock aspect ratio");
                     if ui.button("Apply").clicked() {
-                        operation = Some(Operation::Resize {
+                        app.batch_state.pending_resize = Some(Operation::Resize {
                             width: app.batch_state.resize_width,
                             height: app.batch_state.resize_height,
                             lock_aspect: app.batch_state.resize_lock_aspect,
@@ -311,6 +314,27 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                 }
             });
+            if app.batch_state.pending_resize.is_some() && !running {
+                if app.batch_state.mode != BatchMode::Resize || selected.is_empty() {
+                    app.batch_state.pending_resize = None;
+                } else {
+                    ui.colored_label(
+                        colors.danger,
+                        format!(
+                            "This overwrites {} original file(s) in place and cannot be undone.",
+                            selected.len()
+                        ),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Overwrite").clicked() {
+                            operation = app.batch_state.pending_resize.take();
+                        }
+                        if ui.button("Cancel").clicked() {
+                            app.batch_state.pending_resize = None;
+                        }
+                    });
+                }
+            }
             if let Some(operation) = operation {
                 app.batch_state.start(selected, operation);
             }
