@@ -309,9 +309,24 @@ impl App {
             self.config.save();
         }
         let (dirs, mut files): (Vec<PathBuf>, Vec<PathBuf>) = collect_folder_entries(&folder);
+        let sort_desc = self.config.sort_descending;
+
+        // Folders follow the same sort (size has no meaning for folders, so use name).
+        let mut dirs = dirs;
+        if self.config.sort_by == "date" {
+            let mtimes: std::collections::HashMap<PathBuf, Option<std::time::SystemTime>> = dirs
+                .iter()
+                .map(|p| (p.clone(), std::fs::metadata(p).and_then(|m| m.modified()).ok()))
+                .collect();
+            dirs.sort_by(|a, b| mtimes[a].cmp(&mtimes[b]));
+        } else {
+            dirs.sort_by_cached_key(|p| name_key(p));
+        }
+        if sort_desc {
+            dirs.reverse();
+        }
         self.subfolders = dirs;
 
-        let sort_desc = self.config.sort_descending;
         match self.config.sort_by.as_str() {
             "date" => {
                 let mtimes: Vec<Option<std::time::SystemTime>> = files
@@ -334,7 +349,7 @@ impl App {
                 files = sorted;
             }
             _ => {
-                files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+                files.sort_by_cached_key(|p| name_key(p));
             }
         }
         if sort_desc {
@@ -511,21 +526,6 @@ impl eframe::App for App {
                         }
                     });
                     ui.menu_button("View", |ui| {
-                        ui.menu_button("Sort by", |ui| {
-                            let mut sort_changed = false;
-                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "name".to_string(), "Name").changed();
-                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "date".to_string(), "Date").changed();
-                            sort_changed |= ui.selectable_value(&mut self.config.sort_by, "size".to_string(), "Size").changed();
-                            if sort_changed {
-                                self.scan_folder();
-                            }
-                        });
-                        if ui.button("Toggle sort direction").clicked() {
-                            self.config.sort_descending = !self.config.sort_descending;
-                            self.scan_folder();
-                            ui.close_menu();
-                        }
-                        ui.separator();
                         if ui.button("Toggle Grid/List").clicked() {
                             self.browser_state.show_list_view = !self.browser_state.show_list_view;
                             ui.close_menu();
@@ -792,4 +792,11 @@ mod tests {
         assert!(cache.contains("c"));
         assert_eq!(cache.len(), 2);
     }
+}
+
+/// Case-insensitive sort key based on the file name.
+fn name_key(p: &std::path::Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }

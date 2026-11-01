@@ -63,27 +63,6 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
                 size_changed = true;
             }
         });
-        let mut sort_changed = false;
-        ui.separator();
-        egui::ComboBox::new("sort_by", "")
-            .selected_text(match app.config.sort_by.as_str() {
-                "date" => "Date",
-                "size" => "Size",
-                _ => "Name",
-            })
-            .show_ui(ui, |ui| {
-                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "name".to_string(), "Name").changed();
-                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "date".to_string(), "Date").changed();
-                sort_changed |= ui.selectable_value(&mut app.config.sort_by, "size".to_string(), "Size").changed();
-            });
-        let dir_label = if app.config.sort_descending { "\u{25BC}" } else { "\u{25B2}" };
-        if ui.selectable_label(false, dir_label).clicked() {
-            app.config.sort_descending = !app.config.sort_descending;
-            sort_changed = true;
-        }
-        if sort_changed {
-            app.scan_folder();
-        }
         ui.separator();
         if ui.button("\u{21BB} Refresh").clicked() {
             app.scan_folder();
@@ -537,15 +516,14 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
     const MIN_W: f32 = 60.0;
     const HANDLE_W: f32 = 8.0;
 
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .id_salt("list_view_scroll")
-        .show(ui, |ui| {
+    let mut sort_click: Option<&'static str> = None;
+    {
+        {
             let available = ui.available_width();
 
             let widths = col_widths(&app.config.column_widths, available, ICON_W, MIN_W, GAP);
 
-            // ── Column headers ──────────────────────────────
+            // ── Column headers (pinned above the scroll area) ──
             let header_h = 20.0;
             let (header_rect, _) = ui.allocate_exact_size(
                 Vec2::new(available, header_h),
@@ -561,10 +539,17 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             x += ICON_W;
 
             // Name header + drag handle
+            let cur_sort = app.config.sort_by.clone();
+            let arrow = if app.config.sort_descending { " \u{25BC}" } else { " \u{25B2}" };
+            let hdr_rect = |x: f32, w: f32| egui::Rect::from_min_size(egui::pos2(x, header_y), Vec2::new(w, header_h));
+            let label = |key: &str, name: &str| if cur_sort == key { format!("{name}{arrow}") } else { name.to_string() };
+            if ui.interact(hdr_rect(x, widths.name), egui::Id::new("sort_name"), egui::Sense::click()).clicked() {
+                sort_click = Some("name");
+            }
             ui.painter().text(
                 egui::pos2(x + 4.0, header_y + header_h / 2.0),
                 egui::Align2::LEFT_CENTER,
-                "Name",
+                label("name", "Name"),
                 egui::FontId::proportional(14.0),
                 colors.text_primary,
             );
@@ -575,10 +560,13 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             x += GAP;
 
             // Size header + drag handle
+            if ui.interact(hdr_rect(x, widths.size), egui::Id::new("sort_size"), egui::Sense::click()).clicked() {
+                sort_click = Some("size");
+            }
             ui.painter().text(
                 egui::pos2(x + 4.0, header_y + header_h / 2.0),
                 egui::Align2::LEFT_CENTER,
-                "Size",
+                label("size", "Size"),
                 egui::FontId::proportional(14.0),
                 colors.text_primary,
             );
@@ -589,10 +577,13 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             x += GAP;
 
             // Date header (no handle after)
+            if ui.interact(hdr_rect(x, widths.date), egui::Id::new("sort_date"), egui::Sense::click()).clicked() {
+                sort_click = Some("date");
+            }
             ui.painter().text(
                 egui::pos2(x + 4.0, header_y + header_h / 2.0),
                 egui::Align2::LEFT_CENTER,
-                "Date",
+                label("date", "Date"),
                 egui::FontId::proportional(14.0),
                 colors.text_primary,
             );
@@ -608,6 +599,10 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
             ui.separator();
 
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .id_salt("list_view_scroll")
+                .show(ui, |ui| {
             // ── Folder rows (on top) ────────────────────
             for (fj, folder) in folders.iter().enumerate() {
                 let is_selected = app.browser_state.selected_folder == Some(fj);
@@ -795,7 +790,20 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                     app.browser_state.selected_folder = None;
                 }
             }
-        });
+                });
+        }
+    }
+
+    if let Some(key) = sort_click {
+        if app.config.sort_by == key {
+            app.config.sort_descending = !app.config.sort_descending;
+        } else {
+            app.config.sort_by = key.to_string();
+            app.config.sort_descending = false;
+        }
+        app.config.save();
+        app.scan_folder();
+    }
 }
 
 fn col_widths(cw: &crate::config::ColumnWidths, available: f32, icon_w: f32, min_w: f32, gap: f32) -> ColumnWidthSet {
