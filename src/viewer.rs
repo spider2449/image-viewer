@@ -1,6 +1,6 @@
 use crate::app::{App, Mode};
 use crate::image_loader;
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, emath::GuiRounding, Color32, Vec2};
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,18 +81,21 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         app.viewer_state.zoom_mode = ZoomMode::Fit;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
+                    let pixels_per_point = ui.ctx().pixels_per_point();
                     if ui.button("1:1").clicked() {
-                        app.viewer_state.zoom = 1.0;
+                        app.viewer_state.zoom = one_to_one_zoom(pixels_per_point);
                         app.viewer_state.zoom_mode = ZoomMode::Manual;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
                     ui.colored_label(colors.text_secondary, "Zoom:");
-                    let mut zoom_pct = (app.viewer_state.zoom * 100.0) as i32;
+                    let mut zoom_pct =
+                        zoom_percent(app.viewer_state.zoom, pixels_per_point).round() as i32;
                     if ui
                         .add(egui::Slider::new(&mut zoom_pct, 10..=3200).text("%"))
                         .changed()
                     {
-                        app.viewer_state.zoom = zoom_pct as f32 / 100.0;
+                        app.viewer_state.zoom =
+                            zoom_pct as f32 / 100.0 * one_to_one_zoom(pixels_per_point);
                         app.viewer_state.zoom_mode = ZoomMode::Manual;
                     }
                     // Display group
@@ -200,7 +203,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 let py = app.viewer_state.pan_offset.y;
                 ui.colored_label(
                     colors.text_secondary,
-                    format!("Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})", z * 100.0),
+                    format!(
+                        "Zoom: {:.0}% | Pos: ({px:.0}, {py:.0})",
+                        zoom_percent(z, ui.ctx().pixels_per_point())
+                    ),
                 );
                 ui.separator();
                 if let Some(meta) = app.file_cache.get_or_fetch(&path) {
@@ -311,7 +317,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
                         egui::Key::Num1 => {
-                            app.viewer_state.zoom = 1.0;
+                            app.viewer_state.zoom = one_to_one_zoom(ui.ctx().pixels_per_point());
                             app.viewer_state.zoom_mode = ZoomMode::Manual;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
@@ -372,7 +378,8 @@ fn draw_image(
 ) {
     let colors = app.theme_colors();
     let tex_size = tex.size_vec2();
-    app.viewer_state.fit_zoom = calculate_fit_zoom(tex_size, available);
+    app.viewer_state.fit_zoom =
+        snap_fit_zoom(calculate_fit_zoom(tex_size, available), ui.ctx().pixels_per_point());
     if app.viewer_state.zoom_mode == ZoomMode::Fit {
         app.viewer_state.zoom = app.viewer_state.fit_zoom;
     }
@@ -383,30 +390,24 @@ fn draw_image(
         (available.y - display_size.y).max(0.0) / 2.0,
     );
 
+    // Snap to physical pixels: a fractional origin shifts every sampled texel,
+    // which would blur a true 1:1 view.
     let draw_rect = egui::Rect::from_min_size(
         egui::pos2(
             image_rect.min.x + offset.x + app.viewer_state.pan_offset.x,
             image_rect.min.y + offset.y + app.viewer_state.pan_offset.y,
-        ),
+        )
+        .round_to_pixels(ui.ctx().pixels_per_point()),
         display_size,
     );
 
     // Dark background behind image area (replaces cell-by-cell checkerboard).
     // The border below provides visual separation from the image.
-    {
-        let bg_rect = egui::Rect::from_min_size(
-            egui::pos2(
-                image_rect.min.x + offset.x + app.viewer_state.pan_offset.x,
-                image_rect.min.y + offset.y + app.viewer_state.pan_offset.y,
-            ),
-            display_size,
-        );
-        ui.painter().rect_filled(
-            bg_rect,
-            egui::CornerRadius::ZERO,
-            colors.bg_dark,
-        );
-    }
+    ui.painter().rect_filled(
+        draw_rect,
+        egui::CornerRadius::ZERO,
+        colors.bg_dark,
+    );
 
     // Inner border around image area
     let border_rect = egui::Rect::from_min_size(image_rect.min, available);
@@ -712,7 +713,7 @@ fn draw_image(
             "{}x{}\nZoom: {:.0}%\n{}",
             tex_size.x as u32,
             tex_size.y as u32,
-            app.viewer_state.zoom * 100.0,
+            zoom_percent(app.viewer_state.zoom, ui.ctx().pixels_per_point()),
             path.file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default(),
@@ -996,6 +997,27 @@ fn display_size(texture_size: Vec2, zoom: f32) -> Vec2 {
     texture_size * zoom
 }
 
+// `zoom` is points per texel, because egui lays out in points. The user-facing
+// percentage is physical pixels per texel, so 100% is exact at any display scale.
+fn one_to_one_zoom(pixels_per_point: f32) -> f32 {
+    1.0 / pixels_per_point
+}
+
+fn zoom_percent(zoom: f32, pixels_per_point: f32) -> f32 {
+    zoom * pixels_per_point * 100.0
+}
+
+// Upscaling by a whole number of physical pixels keeps every texel the same size;
+// with nearest filtering a scale like 109% would double some rows and cause moire.
+fn snap_fit_zoom(zoom: f32, pixels_per_point: f32) -> f32 {
+    let physical_scale = zoom * pixels_per_point;
+    if physical_scale > 1.0 {
+        (physical_scale + 1e-4).floor() / pixels_per_point
+    } else {
+        zoom
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1023,6 +1045,26 @@ mod tests {
             display_size(Vec2::new(4000.0, 3000.0), 1.0),
             Vec2::new(4000.0, 3000.0)
         );
+    }
+
+    #[test]
+    fn test_one_to_one_maps_each_texel_to_one_physical_pixel() {
+        for pixels_per_point in [1.0, 1.25, 1.5, 2.0] {
+            let zoom = one_to_one_zoom(pixels_per_point);
+            let physical = display_size(Vec2::new(800.0, 800.0), zoom) * pixels_per_point;
+            assert!((physical.x - 800.0).abs() < 0.001);
+            assert!((zoom_percent(zoom, pixels_per_point) - 100.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_fit_snaps_upscales_to_whole_physical_pixels() {
+        let physical = |zoom: f32, ppp: f32| snap_fit_zoom(zoom, ppp) * ppp;
+        assert!((physical(1.0, 1.25) - 1.0).abs() < 0.001); // 125% -> 100%
+        assert!((physical(1.6, 1.25) - 2.0).abs() < 0.001); // exactly 200%
+        assert!((physical(2.3, 1.0) - 2.0).abs() < 0.001);
+        // Shrinking is left alone.
+        assert_eq!(snap_fit_zoom(0.25, 1.25), 0.25);
     }
 
     #[test]

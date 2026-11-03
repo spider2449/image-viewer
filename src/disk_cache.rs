@@ -27,9 +27,15 @@ impl DiskCache {
             .ok()?
             .as_nanos();
         let length = metadata.len();
+        // Older EXR thumbnails were cached without sRGB encoding; the tag makes
+        // them miss, and `store` then removes them through `delete_old_entries`.
+        let is_exr = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("exr"));
+        let tag = if is_exr { ".srgb" } else { "" };
         Some(
             self.dir
-                .join(format!("{hash}.{modified_ns}.{length}.{max_size}.jpg")),
+                .join(format!("{hash}.{modified_ns}.{length}.{max_size}{tag}.jpg")),
         )
     }
 

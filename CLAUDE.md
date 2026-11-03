@@ -20,7 +20,7 @@ Bump the patch version in `Cargo.toml` before each commit. No tooling — manual
 ## Architecture
 
 - **egui/eframe 0.31** — immediate mode GUI, single window. `app::update` requests a repaint only when work is pending (active slideshow or thumbnails still decoding); otherwise egui idles. Don't reintroduce an unconditional per-frame `ctx.request_repaint()` — it burns CPU when nothing is changing.
-- **`image` crate 0.25** — decoding; features limited to png, jpeg, bmp, gif, tiff, webp.
+- **`image` crate 0.25** — decoding; features limited to png, jpeg, bmp, gif, tiff, webp, exr. Decode files through `image_loader` (`open_image`, `decode_to_colorimage`, `load_thumbnail`), not `image::open` — EXR is scene-linear and premultiplied, and `image_loader` is what converts it to display sRGB.
 - **Modes:** `Browser` (folder tree left + thumbnail grid center) ↔ `Viewer` (image display + optional right-side editor panel).
 - **Thumbnail cache:** background `std::thread` workers + LRU via `lru` crate. `Arc<Mutex<Receiver>>` pattern with `try_recv` + sleep to avoid blocking. Requests all images on scan; `update` re-requests any missing thumbnail each frame.
 - **Disk cache** (`disk_cache.rs`): persists thumbnails/derived data to disk alongside the in-memory LRU.
@@ -64,6 +64,7 @@ src/
 ## Quirks & gotchas
 
 - **"Fit" zoom** correctly computed and stored in `viewer_state.fit_zoom` during `draw_image`. Previously set zoom to 1.0 (same as "1:1") — don't regress this.
+- **Zoom units** — `viewer_state.zoom` is points per texel; the UI percentage is physical pixels per texel (`one_to_one_zoom`, `zoom_percent`). Fit upscales only by whole physical pixels (`snap_fit_zoom`) and viewer textures magnify with nearest filtering (`VIEWER_TEXTURE_OPTIONS`), so fine lines stay sharp.
 - **JPEG quality** requires `image::codecs::jpeg::JpegEncoder::new_with_quality` — `save_with_format` does not support quality.
 - **Crop UI** exists in editor panel but viewer has no crop-drag interaction. `crop_start`/`crop_end` must be set by viewer mouse handling before `Apply Crop` works.
 - **Annotation overlay vs burn must stay in sync** — `paint_shape` (egui) and `burn_shape` (CPU) draw the same object twice; change geometry in shared helpers (`arrow_geometry`, `dash_pattern`, `callout_tail_polygon`) rather than in one side only. Burn composites each object once through a max-combined coverage mask so opacity never double-blends.

@@ -415,7 +415,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             }
                             ui.menu_button("Save as", |ui| {
                                 let mut save = |fmt: &str| {
-                                    if let Ok(img) = image::open(path) {
+                                    if let Ok(img) = crate::image_loader::open_image(path) {
                                         let new_name = path.with_extension(crate::format_ext::format_to_extension(fmt));
                                         if let Err(e) = crate::format_ext::save_image(&img, &new_name, fmt, app.editor_state.save_jpeg_quality) {
                                             eprintln!("Save failed: {e}");

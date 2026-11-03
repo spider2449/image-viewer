@@ -78,7 +78,7 @@ impl State {
     }
 
     pub fn load_image(&mut self, path: &PathBuf) {
-        if let Ok(img) = image::open(path) {
+        if let Ok(img) = crate::image_loader::open_image(path) {
             let (w, h) = img.dimensions();
             self.original_image = Some(img.clone());
             self.current_image = Some(img);
@@ -977,7 +977,7 @@ fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage)
     let (w, h) = img.dimensions();
     let rgba = img.to_rgba8();
     let ci = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-    let tex = ctx.load_texture(&tex_key, ci, egui::TextureOptions::LINEAR);
+    let tex = ctx.load_texture(&tex_key, ci, crate::image_loader::VIEWER_TEXTURE_OPTIONS);
     app.textures.put(tex_key, tex);
 }
 

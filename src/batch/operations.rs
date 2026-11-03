@@ -32,8 +32,8 @@ pub fn process_file(operation: &Operation, path: &PathBuf, index: usize) -> Resu
 }
 
 fn convert_file(path: &PathBuf, format: &str, jpeg_quality: u8) -> Result<(), String> {
-    let img = image::open(path).map_err(|e| e.to_string())?;
-    let new_ext = crate::format_ext::format_to_extension(format);
+    let img = crate::image_loader::open_image(path)?;
+    let new_ext =crate::format_ext::format_to_extension(format);
     let new_name = path.with_extension(new_ext);
     crate::format_ext::save_image(&img, &new_name, format, jpeg_quality)
 }
@@ -62,8 +62,8 @@ fn rename_file(path: &PathBuf, pattern: &str, index: usize) -> Result<(), String
 }
 
 fn resize_file(path: &PathBuf, width: u32, height: u32, lock_aspect: bool) -> Result<(), String> {
-    let img = image::open(path).map_err(|e| e.to_string())?;
-    let resized = if lock_aspect {
+    let img = crate::image_loader::open_image(path)?;
+    let resized =if lock_aspect {
         img.resize(width, height, image::imageops::FilterType::Lanczos3)
     } else {
         img.resize_exact(width, height, image::imageops::FilterType::Lanczos3)
