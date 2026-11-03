@@ -36,8 +36,8 @@ pub struct Config {
     #[serde(default = "default_theme")]
     pub theme: String,
     // Default keeps config files written before this field loadable.
-    #[serde(default)]
-    pub auto_region: crate::editor::operations::RegionParams,
+    #[serde(default, alias = "auto_region")]
+    pub magic_wand: crate::selection::WandParams,
 }
 
 impl Default for Config {
@@ -53,7 +53,7 @@ impl Default for Config {
             column_widths: ColumnWidths::default(),
             thumb_size: 140.0,
             theme: default_theme(),
-            auto_region: Default::default(),
+            magic_wand: Default::default(),
         }
     }
 }
@@ -90,23 +90,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_without_auto_region_still_loads_with_defaults() {
+    fn config_without_magic_wand_still_loads_with_defaults() {
         let mut value = serde_json::to_value(Config::default()).unwrap();
-        value.as_object_mut().unwrap().remove("auto_region");
+        value.as_object_mut().unwrap().remove("magic_wand");
         value["thumb_size"] = serde_json::json!(99.0);
         let config: Config = serde_json::from_value(value).unwrap();
         assert_eq!(config.thumb_size, 99.0);
-        assert_eq!(config.auto_region, Default::default());
+        assert_eq!(config.magic_wand, Default::default());
     }
 
     #[test]
-    fn auto_region_settings_round_trip() {
+    fn magic_wand_settings_round_trip() {
         let mut config = Config::default();
-        config.auto_region.tolerance = 77;
-        config.auto_region.padding = -3;
-        config.auto_region.diagonal = true;
+        config.magic_wand.tolerance = 77;
+        config.magic_wand.expand = -3;
+        config.magic_wand.contiguous = false;
         let text = serde_json::to_string(&config).unwrap();
         let loaded: Config = serde_json::from_str(&text).unwrap();
-        assert_eq!(loaded.auto_region, config.auto_region);
+        assert_eq!(loaded.magic_wand, config.magic_wand);
+    }
+
+    #[test]
+    fn old_auto_region_settings_carry_over() {
+        let mut value = serde_json::to_value(Config::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("magic_wand");
+        object.insert(
+            "auto_region".to_string(),
+            serde_json::json!({ "tolerance": 77, "padding": -3, "min_size": 9, "diagonal": true }),
+        );
+        let config: Config = serde_json::from_value(value).unwrap();
+        assert_eq!(config.magic_wand.tolerance, 77);
+        assert_eq!(config.magic_wand.expand, -3);
+        assert!(config.magic_wand.diagonal);
+        assert!(config.magic_wand.contiguous);
     }
 }

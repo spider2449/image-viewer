@@ -4,6 +4,7 @@ use super::shapes::{
     callout_box, callout_tail_outline, callout_text_lines, line_width, dist_point_segment, rotate_about,
     step_radius, ImgRect, Shape, Style, HANDLE_RADIUS_PX,
 };
+use crate::selection::{paint_mask, PixelMask};
 use eframe::egui;
 
 // Two wing tips of an arrowhead: `dir` is the unit flight direction.
@@ -341,11 +342,16 @@ fn paint_shape(
                 }
             }
         }
-        Shape::Highlight { rect, style } => {
+        Shape::Highlight { rect, style, mask } => {
             let r = egui::Rect::from_min_max(to_screen(rect.min), to_screen(rect.max));
             let mut hl = *style;
             hl.opacity = highlight_opacity(*style);
-            painter.rect_filled(r, egui::CornerRadius::ZERO, hl.effective_color());
+            match mask {
+                Some(mask) => paint_mask(painter, mask, r, hl.effective_color()),
+                None => {
+                    painter.rect_filled(r, egui::CornerRadius::ZERO, hl.effective_color());
+                }
+            }
         }
         Shape::Text { at, text, style } => {
             painter.text(
@@ -411,6 +417,14 @@ fn paint_shape(
                 );
             }
         }
+        Shape::BlurRegion {
+            rect,
+            mask: Some(mask),
+            ..
+        } => {
+            let r = egui::Rect::from_min_max(to_screen(rect.min), to_screen(rect.max));
+            paint_mask(painter, mask, r, egui::Color32::from_black_alpha(80));
+        }
         Shape::BlurRegion { rect, .. } => {
             let r = egui::Rect::from_min_max(to_screen(rect.min), to_screen(rect.max));
             painter.rect_filled(
@@ -463,10 +477,12 @@ pub fn paint_draft(
         super::Tool::Highlight => Shape::Highlight {
             rect: ImgRect::from_points(draft.start, draft.current),
             style,
+            mask: None,
         },
         super::Tool::BlurRegion => Shape::BlurRegion {
             rect: ImgRect::from_points(draft.start, draft.current),
             kind: super::shapes::BlurKind::Blur,
+            mask: None,
         },
         // Stamps are dropped on release; nothing to preview while dragging.
         super::Tool::Text | super::Tool::Callout | super::Tool::Step => return,
@@ -603,6 +619,16 @@ impl Mask {
         }
     }
 
+    // Hard-edged fill of the mask pixels, sampled at each image pixel's center so a
+    // moved or resized object matches its on-screen preview.
+    fn fill_pixel_mask(&mut self, r: ImgRect, mask: &PixelMask) {
+        self.for_box(r.min, r.max, |m, x, y| {
+            if mask.sample(r, x as f32 + 0.5, y as f32 + 0.5) {
+                m.put(x, y, 1.0);
+            }
+        });
+    }
+
     fn fill_rect(&mut self, r: ImgRect) {
         self.for_box(r.min, r.max, |m, x, y| {
             let cx = ((x as f32 + 1.0).min(r.max.x) - (x as f32).max(r.min.x)).clamp(0.0, 1.0);
@@ -708,7 +734,14 @@ fn clamp_rect(rect: ImgRect, w: u32, h: u32) -> Option<IRect> {
 }
 
 // Destructive region effect: Blur softens, Mosaic pixelates.
-fn burn_region(img: &mut RgbaImage, r: IRect, kind: super::shapes::BlurKind) {
+// With a mask (stretched over `rect`) only the selected pixels change.
+fn burn_region(
+    img: &mut RgbaImage,
+    r: IRect,
+    kind: super::shapes::BlurKind,
+    rect: ImgRect,
+    mask: Option<&PixelMask>,
+) {
     use super::shapes::BlurKind;
     let (x, y, w, h) = (
         r.left().max(0) as u32,
@@ -736,7 +769,14 @@ fn burn_region(img: &mut RgbaImage, r: IRect, kind: super::shapes::BlurKind) {
     };
     // The rect is pre-clamped inside the image, so the paste is in bounds.
     for (px, py, pixel) in out.enumerate_pixels() {
-        img.put_pixel(x + px, y + py, *pixel);
+        let (ix, iy) = (x + px, y + py);
+        let selected = match mask {
+            Some(mask) => mask.sample(rect, ix as f32 + 0.5, iy as f32 + 0.5),
+            None => true,
+        };
+        if selected {
+            img.put_pixel(ix, iy, *pixel);
+        }
     }
 }
 
@@ -859,10 +899,13 @@ fn burn_shape(img: &mut RgbaImage, shape: &Shape, silhouette: bool) {
                 }
             }
         }
-        Shape::Highlight { rect, style } => {
+        Shape::Highlight { rect, style, mask } => {
             // Translucent fill regardless of the filled flag.
             if let Some(mut m) = Mask::new(*rect, 1.0, w, h) {
-                m.fill_rect(*rect);
+                match mask {
+                    Some(mask) => m.fill_pixel_mask(*rect, mask),
+                    None => m.fill_rect(*rect),
+                }
                 let mut hl = *style;
                 hl.opacity = highlight_opacity(*style);
                 m.composite(img, style_rgba(hl));
@@ -920,9 +963,9 @@ fn burn_shape(img: &mut RgbaImage, shape: &Shape, silhouette: bool) {
                 }
             }
         }
-        Shape::BlurRegion { rect, kind } => {
+        Shape::BlurRegion { rect, kind, mask } => {
             if let Some(r) = clamp_rect(*rect, w, h) {
-                burn_region(img, r, *kind);
+                burn_region(img, r, *kind, *rect, mask.as_deref());
             }
         }
     }
@@ -1304,10 +1347,58 @@ mod tests {
                 max: egui::pos2(64.0, 64.0),
             },
             kind: BlurKind::Blur,
+            mask: None,
         };
         let out = burn(&img, &[shape]);
         assert_eq!(out.dimensions(), (64, 64));
         assert_ne!(out.to_rgba8(), img.to_rgba8());
+    }
+
+    // A mask selecting every black tile of the checkerboard, made the way the panel
+    // makes one: wand click, then the object mask of the selection.
+    fn black_tiles_mask(image: &DynamicImage) -> (ImgRect, std::sync::Arc<PixelMask>) {
+        let mut wand = crate::selection::MagicWand::default();
+        let params = crate::selection::WandParams {
+            contiguous: false,
+            ..Default::default()
+        };
+        wand.click(image, (0, 0), &params, crate::selection::WandMode::Replace);
+        let selection = wand.selection.as_ref().unwrap();
+        (selection.bounds_rect(), selection.object_mask().unwrap())
+    }
+
+    #[test]
+    fn burn_masked_blur_changes_only_selected_pixels() {
+        let img = checker_image(64, 64);
+        let (rect, mask) = black_tiles_mask(&img);
+        let shape = Shape::BlurRegion {
+            rect,
+            kind: BlurKind::Blur,
+            mask: Some(mask.clone()),
+        };
+        let (before, out) = (img.to_rgba8(), burn(&img, &[shape]).to_rgba8());
+        assert_ne!(out, before);
+        for (x, y, pixel) in out.enumerate_pixels() {
+            if !mask.sample(rect, x as f32 + 0.5, y as f32 + 0.5) {
+                assert_eq!(pixel, before.get_pixel(x, y));
+            }
+        }
+    }
+
+    #[test]
+    fn burn_masked_highlight_tints_only_selected_pixels() {
+        let img = checker_image(64, 64);
+        let (rect, mask) = black_tiles_mask(&img);
+        let shape = Shape::Highlight {
+            rect,
+            style: red_style(),
+            mask: Some(mask.clone()),
+        };
+        let (before, out) = (img.to_rgba8(), burn(&img, &[shape]).to_rgba8());
+        for (x, y, pixel) in out.enumerate_pixels() {
+            let selected = mask.sample(rect, x as f32 + 0.5, y as f32 + 0.5);
+            assert_eq!(pixel != before.get_pixel(x, y), selected, "pixel {x},{y}");
+        }
     }
 
     #[test]

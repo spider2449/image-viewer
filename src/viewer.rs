@@ -1,5 +1,6 @@
 use crate::app::{App, Mode};
 use crate::image_loader;
+use crate::selection::WandMode;
 use eframe::egui::{self, emath::GuiRounding, Color32, Vec2};
 use std::path::PathBuf;
 
@@ -252,6 +253,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     ..
                 } = event
                 {
+                    if app.editor_state.wand.active
+                        && app.editor_state.visible
+                        && modifiers.command
+                        && *key == egui::Key::D
+                    {
+                        app.editor_state.wand.selection = None;
+                        continue;
+                    }
                     let ann = &mut app.editor_state.annotate;
                     if ann.active && modifiers.command {
                         match key {
@@ -281,6 +290,15 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         }
                         egui::Key::Delete if app.editor_state.annotate.active => {
                             app.editor_state.annotate.delete_selected();
+                        }
+                        egui::Key::Escape
+                            if app.editor_state.wand.active && app.editor_state.visible =>
+                        {
+                            // Esc deselects first, then leaves the tool.
+                            let wand = &mut app.editor_state.wand;
+                            if wand.selection.take().is_none() {
+                                wand.active = false;
+                            }
                         }
                         egui::Key::Escape if app.editor_state.annotate.active => {
                             // Esc backs out of draw mode one level at a time.
@@ -378,8 +396,7 @@ fn draw_image(
 ) {
     let colors = app.theme_colors();
     let tex_size = tex.size_vec2();
-    app.viewer_state.fit_zoom =
-        snap_fit_zoom(calculate_fit_zoom(tex_size, available), ui.ctx().pixels_per_point());
+    app.viewer_state.fit_zoom = calculate_fit_zoom(tex_size, available);
     if app.viewer_state.zoom_mode == ZoomMode::Fit {
         app.viewer_state.zoom = app.viewer_state.fit_zoom;
     }
@@ -447,6 +464,7 @@ fn draw_image(
 
     let crop_active = app.editor_state.crop_active;
     let annot_active = app.editor_state.annotate.active;
+    let wand_active = app.editor_state.visible && app.editor_state.wand.active;
     let zoom = app.viewer_state.zoom;
     let drag = ui.interact(
         egui::Rect::from_min_size(image_rect.min, available),
@@ -464,16 +482,35 @@ fn draw_image(
             if let Some(pos) = mouse_pos {
                 app.editor_state.crop_end = Some(screen_to_image_pos(pos, draw_rect, tex_size));
             }
-        } else if drag.clicked() && app.editor_state.auto_region.enabled {
-            if let Some(pos) = mouse_pos {
-                let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
-                // A miss keeps whatever crop rectangle is already there.
-                let params = app.config.auto_region;
-                if let Some(r) = crate::editor::auto_region_at(&mut app.editor_state, &params, img_pos) {
-                    app.editor_state.crop_start = Some(r.min);
-                    app.editor_state.crop_end = Some(r.max);
+        }
+    } else if wand_active {
+        if drag.clicked() {
+            // A click beside the image would otherwise clamp onto its edge pixels.
+            if let Some(pos) = mouse_pos.filter(|p| draw_rect.contains(*p)) {
+                let seed = screen_to_image_pos(pos, draw_rect, tex_size);
+                let modifiers = ui.ctx().input(|i| i.modifiers);
+                let mode = if modifiers.alt {
+                    WandMode::Subtract
+                } else if modifiers.shift {
+                    WandMode::Add
+                } else {
+                    WandMode::Replace
+                };
+                let params = app.config.magic_wand;
+                let editor = &mut app.editor_state;
+                if let Some(image) = &editor.current_image {
+                    editor
+                        .wand
+                        .click(image, (seed.x as u32, seed.y as u32), &params, mode);
+                    // The panel and adjustment preview react to the new selection.
+                    ui.ctx().request_repaint();
                 }
             }
+        } else if drag.dragged() {
+            app.viewer_state.pan_offset += drag.drag_delta();
+        }
+        if drag.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
     } else if annot_active {
         handle_annotate_drag(app, &drag, draw_rect, tex_size, mouse_pos, zoom);
@@ -707,6 +744,25 @@ fn draw_image(
         }
     }
 
+    // Magic Wand selection, above the objects so it always stays visible.
+    if app.editor_state.visible {
+        if let Some(selection) = app
+            .editor_state
+            .wand
+            .selection
+            .as_ref()
+            .filter(|s| s.mask.width() == tex_size.x as usize && s.mask.height() == tex_size.y as usize)
+        {
+            let to_screen = |p: egui::Pos2| image_to_screen_pos(p, draw_rect, tex_size);
+            crate::selection::paint_selection(ui.painter(), selection, draw_rect, to_screen);
+            if selection.animates() {
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(
+                    crate::selection::ANT_FRAME_SECONDS,
+                ));
+            }
+        }
+    }
+
     // Styled info overlay
     if app.viewer_state.show_info {
         let info_text = format!(
@@ -893,27 +949,6 @@ fn handle_annotate_drag(
     if drag.clicked() && ann.tool != Tool::Select && !ann.tool.is_stamp() {
         if let Some(pos) = hover_pos {
             let hit = ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance));
-            // Objects win over detection, so existing ones stay clickable.
-            if hit.is_none()
-                && !additive
-                && ann.tool.takes_region()
-                && app.editor_state.auto_region.enabled
-            {
-                let params = app.config.auto_region;
-                let region = crate::editor::auto_region_at(&mut app.editor_state, &params, pos);
-                let ann = &mut app.editor_state.annotate;
-                ann.select(None);
-                if let Some(r) = region {
-                    ann.draft = Some(Draft {
-                        tool: ann.tool,
-                        start: r.min,
-                        current: r.max,
-                        points: Vec::new(),
-                    });
-                    commit_draft(ann);
-                }
-                return;
-            }
             ann.click_select(hit, additive);
         }
         return;
@@ -1007,17 +1042,6 @@ fn zoom_percent(zoom: f32, pixels_per_point: f32) -> f32 {
     zoom * pixels_per_point * 100.0
 }
 
-// Upscaling by a whole number of physical pixels keeps every texel the same size;
-// with nearest filtering a scale like 109% would double some rows and cause moire.
-fn snap_fit_zoom(zoom: f32, pixels_per_point: f32) -> f32 {
-    let physical_scale = zoom * pixels_per_point;
-    if physical_scale > 1.0 {
-        (physical_scale + 1e-4).floor() / pixels_per_point
-    } else {
-        zoom
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1058,13 +1082,10 @@ mod tests {
     }
 
     #[test]
-    fn test_fit_snaps_upscales_to_whole_physical_pixels() {
-        let physical = |zoom: f32, ppp: f32| snap_fit_zoom(zoom, ppp) * ppp;
-        assert!((physical(1.0, 1.25) - 1.0).abs() < 0.001); // 125% -> 100%
-        assert!((physical(1.6, 1.25) - 2.0).abs() < 0.001); // exactly 200%
-        assert!((physical(2.3, 1.0) - 2.0).abs() < 0.001);
-        // Shrinking is left alone.
-        assert_eq!(snap_fit_zoom(0.25, 1.25), 0.25);
+    fn test_fit_fills_the_area_at_fractional_scales() {
+        // Regression: Fit once stopped at 100% for anything under a 2x upscale.
+        let zoom = calculate_fit_zoom(Vec2::new(1000.0, 700.0), Vec2::new(1400.0, 1400.0));
+        assert_eq!(zoom, 1.4);
     }
 
     #[test]

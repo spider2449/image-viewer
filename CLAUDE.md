@@ -8,7 +8,7 @@ Single-crate Rust project (egui/eframe desktop app). No workspace, no CI.
 
 ```bash
 cargo check            # only verification that matters day-to-day
-cargo test              # unit tests (editor::operations, browser::grid, theme)
+cargo test              # unit tests (editor::operations, selection, browser::grid, theme)
 cargo test <name>       # run a single test by (partial) name
 cargo build --release   # produces single binary at target/release/image-viewer[.exe]
 ```
@@ -38,6 +38,7 @@ src/
   theme.rs            — Theme enum, ThemeColors palette, egui Visuals/Style builders
   viewer.rs           — image display, zoom/pan, slideshow
   image_loader.rs     — decode → egui ColorImage/TextureHandle
+  selection.rs        — Magic Wand: fill, PixelMask arithmetic, marching ants
   thumbnail_cache.rs  — async thumbnail requests
   disk_cache.rs       — on-disk thumbnail/derived-data cache
   font_loader.rs      — cross-platform CJK font loading
@@ -64,10 +65,11 @@ src/
 ## Quirks & gotchas
 
 - **"Fit" zoom** correctly computed and stored in `viewer_state.fit_zoom` during `draw_image`. Previously set zoom to 1.0 (same as "1:1") — don't regress this.
-- **Zoom units** — `viewer_state.zoom` is points per texel; the UI percentage is physical pixels per texel (`one_to_one_zoom`, `zoom_percent`). Fit upscales only by whole physical pixels (`snap_fit_zoom`) and viewer textures magnify with nearest filtering (`VIEWER_TEXTURE_OPTIONS`), so fine lines stay sharp.
+- **Zoom units** — `viewer_state.zoom` is points per texel; the UI percentage is physical pixels per texel (`one_to_one_zoom`, `zoom_percent`). Viewer textures magnify with nearest filtering (`VIEWER_TEXTURE_OPTIONS`), so fine lines stay sharp at 1:1 and whole-number zooms. Fit always fills the view, even at a fractional scale where some rows come out a pixel thicker; snapping it to whole multiples made it behave like 1:1 for anything under 2x, so don't reintroduce that.
 - **JPEG quality** requires `image::codecs::jpeg::JpegEncoder::new_with_quality` — `save_with_format` does not support quality.
 - **Crop UI** exists in editor panel but viewer has no crop-drag interaction. `crop_start`/`crop_end` must be set by viewer mouse handling before `Apply Crop` works.
 - **Annotation overlay vs burn must stay in sync** — `paint_shape` (egui) and `burn_shape` (CPU) draw the same object twice; change geometry in shared helpers (`arrow_geometry`, `dash_pattern`, `callout_tail_polygon`) rather than in one side only. Burn composites each object once through a max-combined coverage mask so opacity never double-blends.
+- **Magic Wand objects** — Blur/Mosaic/Highlight objects made from a selection carry `mask: Option<Arc<PixelMask>>`, cropped to the object's bounds and stretched with its rect. Overlay and burn both sample it nearest-neighbour, so keep `PixelMask::sample` and the `NEAREST` mask texture in step. Adjustments and Quick Effects go through `State::scoped`, which wraps them in `EditOp::Masked` while a selection exists, so undo/redo replays them exactly. A new pixel-only op must be listed in `EditOp::keeps_geometry`. The live selection survives those ops and ends when pixels move or are replaced (transforms, `Replace`, revert, `load_image`, discard). Marching ants repaint at 10 fps only while a selection is showing.
 - **Textures** — `app.textures` is an 8-entry LRU (and is cleared on `scan_folder`), so memory is bounded within a folder.
 - **Batch Resize overwrites originals in place** — the UI requires an explicit "Overwrite" confirmation before starting.
 - **Editor's `save_as`** writes alongside source file with new extension (no file dialog).

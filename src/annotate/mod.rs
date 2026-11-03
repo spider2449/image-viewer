@@ -29,11 +29,6 @@ pub enum Tool {
 }
 
 impl Tool {
-    // Tools whose object is a rectangle, so Auto Region can size it from a click.
-    pub fn takes_region(self) -> bool {
-        matches!(self, Tool::Rect | Tool::Ellipse | Tool::Highlight | Tool::BlurRegion)
-    }
-
     // Tools that drop an object on click instead of sizing it by dragging.
     pub fn is_stamp(self) -> bool {
         matches!(self, Tool::Text | Tool::Callout | Tool::Step)
@@ -417,6 +412,13 @@ impl AnnotateState {
     }
 
     // Push a new object and select it.
+    // Add an object made outside draw mode, undoable and left unselected so no
+    // resize handles appear while another tool is in use.
+    pub fn add_object(&mut self, shape: Shape) {
+        self.push_shape(shape);
+        self.selected.clear();
+    }
+
     fn push_shape(&mut self, shape: Shape) {
         self.snapshot();
         self.shapes.push(shape);
@@ -601,6 +603,7 @@ pub fn commit_draft(state: &mut AnnotateState) {
         Tool::Highlight => Shape::Highlight {
             rect: shapes::ImgRect::from_points(d.start, d.current),
             style,
+            mask: None,
         },
         Tool::BlurRegion => Shape::BlurRegion {
             rect: shapes::ImgRect::from_points(d.start, d.current),
@@ -609,6 +612,7 @@ pub fn commit_draft(state: &mut AnnotateState) {
             } else {
                 shapes::BlurKind::Blur
             },
+            mask: None,
         },
         Tool::Text | Tool::Callout | Tool::Step => {
             match stamp_shape(state, d.tool, d.start) {
@@ -821,7 +825,6 @@ mod tests {
     #[test]
     fn region_draft_commits_with_exact_bounds() {
         let mut s = active(Tool::BlurRegion);
-        assert!(s.tool.takes_region());
         s.draft = Some(draft(Tool::BlurRegion, (6.0, 0.0), (10.0, 10.0)));
         commit_draft(&mut s);
         assert_eq!(

@@ -12,6 +12,7 @@ mod file_cache;
 mod font_loader;
 mod format_ext;
 mod image_loader;
+mod selection;
 mod theme;
 mod thumbnail_cache;
 mod viewer;

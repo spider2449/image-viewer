@@ -1,4 +1,6 @@
+use crate::selection::PixelMask;
 use eframe::egui;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ImgRect {
@@ -187,9 +189,11 @@ pub enum Shape {
         rect: ImgRect,
         style: Style,
     },
+    // `mask` limits the effect to the selected pixels; it stretches with `rect`.
     Highlight {
         rect: ImgRect,
         style: Style,
+        mask: Option<Arc<PixelMask>>,
     },
     Text {
         at: egui::Pos2,
@@ -199,6 +203,7 @@ pub enum Shape {
     BlurRegion {
         rect: ImgRect,
         kind: BlurKind,
+        mask: Option<Arc<PixelMask>>,
     },
     // Speech bubble: box anchored at `at` with a user-resizable `size`, plus a tail tip.
     Callout {

@@ -1,18 +1,13 @@
 pub mod operations;
 
+use crate::annotate::Shape;
 use crate::app::App;
 use eframe::egui;
 use image::{DynamicImage, GenericImageView};
 use operations::{ColorAdjustments, EditOp, ResizeFilter, ResizeMode};
+use crate::selection::{MagicWand, WandParams};
 use std::path::PathBuf;
 use std::sync::Arc;
-
-// Click-to-detect settings shared by the crop tool and the region annotation tools.
-pub struct AutoRegion {
-    pub enabled: bool,
-    // The last click found nothing usable, so the panel can say why nothing happened.
-    pub missed: bool,
-}
 
 pub struct State {
     pub visible: bool,
@@ -25,7 +20,9 @@ pub struct State {
     pub crop_active: bool,
     pub crop_start: Option<egui::Pos2>,
     pub crop_end: Option<egui::Pos2>,
-    pub auto_region: AutoRegion,
+    pub wand: MagicWand,
+    // Which selection the live adjustment preview was last drawn for.
+    previewed_selection: usize,
     pub resize_width: u32,
     pub resize_height: u32,
     pub resize_lock_aspect: bool,
@@ -56,10 +53,8 @@ impl State {
             crop_active: false,
             crop_start: None,
             crop_end: None,
-            auto_region: AutoRegion {
-                enabled: false,
-                missed: false,
-            },
+            wand: MagicWand::default(),
+            previewed_selection: 0,
             resize_width: 0,
             resize_height: 0,
             resize_lock_aspect: true,
@@ -88,7 +83,7 @@ impl State {
             self.history.clear();
             self.history_index = 0;
             self.annotate.clear();
-            self.auto_region.missed = false;
+            self.wand.selection = None;
             self.save_as_filename = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -97,13 +92,28 @@ impl State {
         }
     }
 
+    // Limit a pixel-only op to the Magic Wand selection, when there is one.
+    fn scoped(&self, op: &EditOp) -> EditOp {
+        match &self.wand.selection {
+            Some(selection) if op.keeps_geometry() => EditOp::Masked {
+                op: Box::new(op.clone()),
+                mask: selection.mask.clone(),
+            },
+            _ => op.clone(),
+        }
+    }
+
     fn apply_operation(&mut self, op: &EditOp) -> bool {
+        let op = self.scoped(op);
         let Some(current) = self.current_image.as_ref() else {
             return false;
         };
         let result = op.apply(current);
+        if !op.keeps_geometry() {
+            self.wand.selection = None;
+        }
         self.history.truncate(self.history_index);
-        self.history.push(op.clone());
+        self.history.push(op);
         self.history_index += 1;
         self.current_image = Some(result);
         true
@@ -130,6 +140,9 @@ impl State {
             return false;
         }
         self.history_index -= 1;
+        if !self.history[self.history_index].keeps_geometry() {
+            self.wand.selection = None;
+        }
         self.rebuild_current();
         true
     }
@@ -142,7 +155,11 @@ impl State {
         let Some(current) = self.current_image.as_ref() else {
             return false;
         };
-        self.current_image = Some(operation.apply(current));
+        let result = operation.apply(current);
+        if !operation.keeps_geometry() {
+            self.wand.selection = None;
+        }
+        self.current_image = Some(result);
         self.history_index += 1;
         true
     }
@@ -152,6 +169,7 @@ impl State {
             return false;
         }
         self.history_index = 0;
+        self.wand.selection = None;
         self.rebuild_current();
         true
     }
@@ -193,6 +211,7 @@ impl State {
         self.history_index = 0;
         self.adjustments = ColorAdjustments::default();
         self.annotate.clear();
+        self.wand.selection = None;
     }
 }
 
@@ -275,6 +294,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 )
                 .default_open(true)
                 .show(ui, |ui| {
+                    selection_scope_hint(app, ui);
                     preview_changed |= adjustment_controls(ui, &mut app.editor_state.adjustments);
                     ui.horizontal(|ui| {
                         let can_apply = !app.editor_state.adjustments.is_neutral();
@@ -303,6 +323,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 )
                 .default_open(true)
                 .show(ui, |ui| {
+                    selection_scope_hint(app, ui);
                     ui.horizontal_wrapped(|ui| {
                         for (label, op) in [
                             ("Auto Contrast", EditOp::AutoContrast),
@@ -341,6 +362,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         );
                     }
                 });
+
+                ui.separator();
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Magic Wand").strong().color(colors.accent),
+                )
+                .default_open(true)
+                .show(ui, |ui| wand_controls(app, ctx, ui));
 
                 ui.separator();
                 egui::CollapsingHeader::new(
@@ -388,6 +416,17 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
         });
 
+    // The live preview follows the selection it is limited to.
+    let selection_id = app
+        .editor_state
+        .wand
+        .selection
+        .as_ref()
+        .map_or(0, |s| Arc::as_ptr(&s.mask) as usize);
+    if selection_id != app.editor_state.previewed_selection {
+        app.editor_state.previewed_selection = selection_id;
+        preview_changed |= !app.editor_state.adjustments.is_neutral();
+    }
     if preview_changed {
         preview_adjustments(app, ctx);
     }
@@ -526,14 +565,15 @@ fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
         .clicked()
     {
         app.editor_state.crop_active = !app.editor_state.crop_active;
-        if !app.editor_state.crop_active {
+        if app.editor_state.crop_active {
+            app.editor_state.wand.active = false;
+        } else {
             app.editor_state.crop_start = None;
             app.editor_state.crop_end = None;
         }
     }
     if app.editor_state.crop_active {
         ui.label("Drag a rectangle over the image.");
-        auto_region_controls(ui, &mut app.editor_state.auto_region, &mut app.config.auto_region);
         ui.horizontal(|ui| {
             if ui.button("Apply Crop").clicked() {
                 apply_crop(app, ctx);
@@ -547,50 +587,127 @@ fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     }
 }
 
-fn auto_region_controls(
-    ui: &mut egui::Ui,
-    auto: &mut AutoRegion,
-    params: &mut operations::RegionParams,
-) {
-    ui.checkbox(&mut auto.enabled, "Auto Region")
-        .on_hover_text("Click the image to detect the area around that point");
-    if auto.enabled {
-        ui.add(egui::Slider::new(&mut params.tolerance, 0..=128).text("Tolerance"))
-            .on_hover_text("Higher merges more different colors into the area");
-        ui.add(egui::Slider::new(&mut params.padding, -50..=50).text("Padding px"))
-            .on_hover_text("Grow (+) or shrink (-) the detected rectangle on every side");
-        ui.add(egui::Slider::new(&mut params.min_size, 1..=500).text("Min size px"))
-            .on_hover_text("Ignore areas whose longer side is smaller than this");
+fn selection_scope_hint(app: &App, ui: &mut egui::Ui) {
+    if app.editor_state.wand.selection.is_some() {
+        ui.small("Only the Magic Wand selection is affected.");
+    }
+}
+
+fn wand_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
+    let editor = &mut app.editor_state;
+    if ui.selectable_label(editor.wand.active, "Wand Tool").clicked() {
+        editor.wand.active = !editor.wand.active;
+        if editor.wand.active {
+            // Annotate, crop and wand modes are mutually exclusive.
+            editor.crop_active = false;
+            editor.crop_start = None;
+            editor.crop_end = None;
+            editor.annotate.active = false;
+            editor.annotate.draft = None;
+            editor.annotate.selected.clear();
+        }
+    }
+    if editor.wand.active {
+        ui.small(
+            "Click: select  |  Shift+click: add  |  Alt+click: subtract  |  \
+             Drag: pan  |  Ctrl+D: deselect  |  Esc: back out",
+        );
+        wand_settings(ui, &mut app.config.magic_wand);
+    }
+
+    let Some((count, (x, y, width, height))) = app
+        .editor_state
+        .wand
+        .selection
+        .as_ref()
+        .map(|s| (s.count, s.bounds))
+    else {
+        return;
+    };
+    ui.label(format!("{count} px selected ({width} x {height})"));
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Deselect").clicked() {
+            app.editor_state.wand.selection = None;
+        }
+        if ui.button("Invert").clicked() {
+            app.editor_state.wand.invert();
+        }
+        if ui
+            .button("Crop")
+            .on_hover_text("Crop the image to the selection's bounds")
+            .clicked()
+        {
+            apply_op(app, ctx, EditOp::Crop { x, y, width, height });
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        use crate::annotate::shapes::BlurKind;
+        if ui.button("Blur").on_hover_text(EXACT_HINT).clicked() {
+            selection_to_object(app, |rect, mask, _| Shape::BlurRegion {
+                rect,
+                kind: BlurKind::Blur,
+                mask,
+            });
+        }
+        if ui.button("Mosaic").on_hover_text(EXACT_HINT).clicked() {
+            selection_to_object(app, |rect, mask, _| Shape::BlurRegion {
+                rect,
+                kind: BlurKind::Mosaic,
+                mask,
+            });
+        }
+        if ui.button("Highlight").on_hover_text(EXACT_HINT).clicked() {
+            selection_to_object(app, |rect, mask, style| Shape::Highlight { rect, style, mask });
+        }
+        if ui.button("Rect").on_hover_text(BOUNDS_HINT).clicked() {
+            selection_to_object(app, |rect, _, style| Shape::Rect { rect, style });
+        }
+        if ui.button("Ellipse").on_hover_text(BOUNDS_HINT).clicked() {
+            selection_to_object(app, |rect, _, style| Shape::Ellipse { rect, style });
+        }
+    });
+}
+
+const EXACT_HINT: &str =
+    "Add an object covering exactly the selected pixels. Burn it in with Apply under Annotate.";
+const BOUNDS_HINT: &str =
+    "Add an object around the selection's bounds. Burn it in with Apply under Annotate.";
+
+fn wand_settings(ui: &mut egui::Ui, params: &mut WandParams) {
+    ui.add(egui::Slider::new(&mut params.tolerance, 0..=255).text("Tolerance"))
+        .on_hover_text("Higher selects colors further from the clicked one");
+    ui.add(egui::Slider::new(&mut params.expand, -50..=50).text("Expand px"))
+        .on_hover_text("Grow (+) or shrink (-) what each click selects");
+    ui.checkbox(&mut params.contiguous, "Contiguous")
+        .on_hover_text("Only pixels connected to the clicked one, else all similar pixels");
+    ui.add_enabled_ui(params.contiguous, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut params.follow_gradient, "Follow gradient")
                 .on_hover_text("Compare neighbouring pixels instead of the clicked color");
             ui.checkbox(&mut params.diagonal, "Diagonal")
                 .on_hover_text("Let the area spread across diagonal pixel corners");
-            if ui.button("Reset").clicked() {
-                *params = Default::default();
-            }
         });
-        if auto.missed {
-            ui.small("No enclosed area there. Try another spot or tolerance.");
-        }
+    });
+    if ui.button("Reset").clicked() {
+        *params = Default::default();
     }
 }
 
-// Detect the area around `pos` (image px) on the current image, recording a miss.
-pub(crate) fn auto_region_at(
-    state: &mut State,
-    params: &operations::RegionParams,
-    pos: egui::Pos2,
-) -> Option<crate::annotate::ImgRect> {
-    let region = state
-        .current_image
-        .as_ref()
-        .and_then(|image| operations::detect_region(image, (pos.x as u32, pos.y as u32), params));
-    state.auto_region.missed = region.is_none();
-    region.map(|(x, y, w, h)| crate::annotate::ImgRect {
-        min: egui::pos2(x as f32, y as f32),
-        max: egui::pos2((x + w) as f32, (y + h) as f32),
-    })
+// Turn the selection into an annotation object and drop it, ready for the next click.
+fn selection_to_object(
+    app: &mut App,
+    build: impl FnOnce(
+        crate::annotate::ImgRect,
+        Option<Arc<crate::selection::PixelMask>>,
+        crate::annotate::Style,
+    ) -> Shape,
+) {
+    let editor = &mut app.editor_state;
+    let Some(selection) = editor.wand.selection.take() else {
+        return;
+    };
+    let shape = build(selection.bounds_rect(), selection.object_mask(), editor.annotate.style);
+    editor.annotate.add_object(shape);
 }
 
 fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
@@ -616,8 +733,9 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
                 app.editor_state.annotate.draft = None;
                 if !app.editor_state.annotate.active {
                     app.editor_state.annotate.active = true;
-                    // Annotate and crop modes are mutually exclusive.
+                    // Annotate, crop and wand modes are mutually exclusive.
                     app.editor_state.crop_active = false;
+                    app.editor_state.wand.active = false;
                 }
             }
         }
@@ -630,6 +748,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
             app.editor_state.annotate.active = !app.editor_state.annotate.active;
             if app.editor_state.annotate.active {
                 app.editor_state.crop_active = false;
+                app.editor_state.wand.active = false;
             } else {
                 app.editor_state.annotate.draft = None;
                 app.editor_state.annotate.selected.clear();
@@ -728,9 +847,6 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
 
     if ann.tool == Tool::BlurRegion {
         ui.checkbox(&mut ann.mosaic, "Mosaic (else blur)");
-    }
-    if ann.tool.takes_region() {
-        auto_region_controls(ui, &mut app.editor_state.auto_region, &mut app.config.auto_region);
     }
     if matches!(ann.tool, Tool::Text | Tool::Callout) {
         ui.add(
@@ -1018,7 +1134,10 @@ fn preview_adjustments(app: &mut App, ctx: &egui::Context) {
     let Some(image) = app.editor_state.current_image.as_ref() else {
         return;
     };
-    let preview = EditOp::Adjust(app.editor_state.adjustments).apply(image);
+    let preview = app
+        .editor_state
+        .scoped(&EditOp::Adjust(app.editor_state.adjustments))
+        .apply(image);
     upload_texture(app, ctx, &preview);
 }
 
@@ -1242,24 +1361,91 @@ mod tests {
     }
 
     #[test]
-    fn test_auto_region_returns_pixel_edges_and_flags_misses() {
-        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_fn(10, 10, |x, _| {
-            image::Rgba(if x >= 6 {
-                [0, 0, 0, 255]
-            } else {
-                [255, 255, 255, 255]
-            })
-        }));
-        let mut state = state_with_image(image);
-        let params = operations::RegionParams::default();
-        let rect = auto_region_at(&mut state, &params, egui::pos2(7.5, 3.0)).unwrap();
-        assert_eq!(rect.min, egui::pos2(6.0, 0.0));
-        assert_eq!(rect.max, egui::pos2(10.0, 10.0));
-        assert!(!state.auto_region.missed);
+    fn test_wand_selection_ends_when_pixels_move() {
+        let mut state = state_with_image(colored_image(4, 6, 10));
+        let select = |state: &mut State| {
+            let image = state.current_image.clone().unwrap();
+            state.wand.click(
+                &image,
+                (0, 0),
+                &WandParams::default(),
+                crate::selection::WandMode::Replace,
+            );
+            assert!(state.wand.selection.is_some());
+        };
 
-        state.current_image = Some(colored_image(10, 10, 50));
-        assert!(auto_region_at(&mut state, &params, egui::pos2(5.0, 5.0)).is_none());
-        assert!(state.auto_region.missed);
+        select(&mut state);
+        assert!(state.apply_operation(&EditOp::Rotate90Cw));
+        assert!(state.wand.selection.is_none());
+
+        select(&mut state);
+        assert!(state.undo_edit());
+        assert!(state.wand.selection.is_none());
+
+        select(&mut state);
+        assert!(state.redo_edit());
+        assert!(state.wand.selection.is_none());
+
+        select(&mut state);
+        state.discard_changes();
+        assert!(state.wand.selection.is_none());
+    }
+
+    // Left half red value 0, right half 200; returns the state with the right half selected.
+    fn state_with_right_half_selected() -> State {
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_fn(4, 1, |x, _| {
+            image::Rgba([if x < 2 { 0 } else { 200 }, 0, 0, 255])
+        }));
+        let mut state = state_with_image(image.clone());
+        state.wand.click(
+            &image,
+            (3, 0),
+            &WandParams::default(),
+            crate::selection::WandMode::Replace,
+        );
+        state
+    }
+
+    fn reds(state: &State) -> Vec<u8> {
+        let image = state.current_image.as_ref().unwrap().to_rgba8();
+        image.pixels().map(|p| p[0]).collect()
+    }
+
+    #[test]
+    fn test_effect_is_limited_to_the_selection_and_undo_keeps_it() {
+        let mut state = state_with_right_half_selected();
+        assert!(state.apply_operation(&EditOp::Invert));
+        assert_eq!(reds(&state), vec![0, 0, 55, 55]);
+        // The selection survives, so several effects can stack on it.
+        assert!(state.wand.selection.is_some());
+
+        assert!(state.undo_edit());
+        assert_eq!(reds(&state), vec![0, 0, 200, 200]);
+        assert!(state.wand.selection.is_some());
+
+        // Redo replays the masked op even after the selection is gone.
+        state.wand.selection = None;
+        assert!(state.redo_edit());
+        assert_eq!(reds(&state), vec![0, 0, 55, 55]);
+    }
+
+    #[test]
+    fn test_committed_adjustment_is_limited_to_the_selection() {
+        let mut state = state_with_right_half_selected();
+        state.adjustments.brightness = 20.0;
+        assert!(state.commit_adjustments());
+        let result = reds(&state);
+        assert_eq!(&result[..2], &[0, 0]);
+        assert!(result[2] > 200);
+        assert!(state.wand.selection.is_some());
+    }
+
+    #[test]
+    fn test_transform_ignores_the_selection_and_ends_it() {
+        let mut state = state_with_right_half_selected();
+        assert!(state.apply_operation(&EditOp::FlipHorizontal));
+        assert_eq!(reds(&state), vec![200, 200, 0, 0]);
+        assert!(state.wand.selection.is_none());
     }
 
     #[test]
