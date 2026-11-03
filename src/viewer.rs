@@ -222,6 +222,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
         });
 
+    // Side panels must claim their space before the central panel; otherwise the
+    // image area extends underneath them and receives their pointer input.
+    crate::editor::show(app, ctx);
+    crate::exif::show(&mut app.exif_state, ctx, &colors);
+
     egui::CentralPanel::default().show(ctx, |ui| {
         let available = ui.available_size();
         let image_rect = ui.max_rect();
@@ -401,7 +406,7 @@ fn draw_image(
     let (mouse_pos, scroll_delta) = ctx_input(ui.ctx());
 
     if let Some(pos) = mouse_pos {
-        if draw_rect.contains(pos) {
+        if ui.rect_contains_pointer(draw_rect) {
             if scroll_delta.y != 0.0 {
                 let old_zoom = app.viewer_state.zoom;
                 app.viewer_state.zoom =
