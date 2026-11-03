@@ -172,16 +172,33 @@ fn stroke_path(
 pub fn paint_shapes(
     painter: &egui::Painter,
     shapes: &[Shape],
-    selected: Option<usize>,
+    selected: &[usize],
     zoom: f32,
     to_screen: impl Fn(egui::Pos2) -> egui::Pos2,
 ) {
+    // Handles only act on a lone selection, so a group shows outlines alone.
+    let show_handles = selected.len() == 1;
     for (i, shape) in shapes.iter().enumerate() {
         paint_with_shadow(painter, shape, zoom, &to_screen);
-        if selected == Some(i) {
-            paint_selection(painter, shape, &to_screen);
+        if selected.contains(&i) {
+            paint_selection(painter, shape, show_handles, &to_screen);
         }
     }
+}
+
+// Rubber-band rectangle of a Select-tool drag on empty canvas (screen px).
+pub fn paint_marquee(painter: &egui::Painter, band: egui::Rect) {
+    painter.rect_filled(
+        band,
+        egui::CornerRadius::ZERO,
+        egui::Color32::from_rgba_unmultiplied(40, 120, 240, 40),
+    );
+    painter.rect_stroke(
+        band,
+        egui::CornerRadius::ZERO,
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(40, 120, 240)),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn paint_with_shadow(
@@ -201,6 +218,7 @@ fn paint_with_shadow(
 fn paint_selection(
     painter: &egui::Painter,
     shape: &Shape,
+    show_handles: bool,
     to_screen: &impl Fn(egui::Pos2) -> egui::Pos2,
 ) {
     let b = shape.bounding_rect();
@@ -217,6 +235,9 @@ fn paint_selection(
         egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
         egui::StrokeKind::Outside,
     );
+    if !show_handles {
+        return;
+    }
     let handles = shape.handles();
     let rotatable = matches!(shape, Shape::Rect { .. } | Shape::Ellipse { .. });
     for (i, h) in handles.iter().enumerate() {

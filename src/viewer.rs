@@ -239,9 +239,29 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             }
             for event in &i.events {
                 if let egui::Event::Key {
-                    key, pressed: true, ..
+                    key,
+                    pressed: true,
+                    repeat,
+                    modifiers,
+                    ..
                 } = event
                 {
+                    let ann = &mut app.editor_state.annotate;
+                    if ann.active && modifiers.command {
+                        match key {
+                            egui::Key::A => ann.select_all(),
+                            egui::Key::D => ann.duplicate_selected(),
+                            _ => {}
+                        }
+                    }
+                    // With objects selected the arrows nudge them instead of
+                    // changing image. A held key is one undo step.
+                    if ann.active && !ann.selected.is_empty() {
+                        if let Some(delta) = nudge_delta(*key, modifiers.shift) {
+                            ann.nudge_selected(delta, !*repeat);
+                            continue;
+                        }
+                    }
                     match key {
                         egui::Key::ArrowLeft => {
                             if !app.viewer_state.is_slideshow {
@@ -261,7 +281,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             let ann = &mut app.editor_state.annotate;
                             if ann.draft.is_some() {
                                 ann.draft = None;
-                            } else if ann.selected.is_some() {
+                            } else if ann.marquee.is_some() {
+                                ann.marquee = None;
+                            } else if !ann.selected.is_empty() {
                                 ann.select(None);
                             } else {
                                 ann.active = false;
@@ -405,6 +427,8 @@ fn draw_image(
 
     let (mouse_pos, scroll_delta) = ctx_input(ui.ctx());
 
+    handle_annotate_clipboard(app, ui.ctx(), draw_rect, tex_size, mouse_pos);
+
     if let Some(pos) = mouse_pos {
         if ui.rect_contains_pointer(draw_rect) {
             if scroll_delta.y != 0.0 {
@@ -439,6 +463,16 @@ fn draw_image(
             if let Some(pos) = mouse_pos {
                 app.editor_state.crop_end = Some(screen_to_image_pos(pos, draw_rect, tex_size));
             }
+        } else if drag.clicked() && app.editor_state.auto_region.enabled {
+            if let Some(pos) = mouse_pos {
+                let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
+                // A miss keeps whatever crop rectangle is already there.
+                let params = app.config.auto_region;
+                if let Some(r) = crate::editor::auto_region_at(&mut app.editor_state, &params, img_pos) {
+                    app.editor_state.crop_start = Some(r.min);
+                    app.editor_state.crop_end = Some(r.max);
+                }
+            }
         }
     } else if annot_active {
         handle_annotate_drag(app, &drag, draw_rect, tex_size, mouse_pos, zoom);
@@ -462,9 +496,17 @@ fn draw_image(
         if drag.secondary_clicked() {
             let tolerance = 8.0 / zoom.max(1e-3);
             let ann = &mut app.editor_state.annotate;
+            // Right-clicking an unselected object targets the menu at that object.
+            let hit = mouse_pos.and_then(|m| {
+                let pos = screen_to_image_pos(m, draw_rect, tex_size);
+                ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance))
+            });
+            if let Some(i) = hit {
+                ann.grab(i, false);
+            }
             ann.menu_anchor = mouse_pos.and_then(|m| {
                 let pos = screen_to_image_pos(m, draw_rect, tex_size);
-                ann.selected.and_then(|i| ann.shapes.get(i)).and_then(|s| match s {
+                ann.single_selected().and_then(|i| ann.shapes.get(i)).and_then(|s| match s {
                     crate::annotate::Shape::Pencil { .. } => s
                         .handles()
                         .iter()
@@ -477,7 +519,7 @@ fn draw_image(
         drag.context_menu(|ui| {
             let ctx = ui.ctx().clone();
             let has_shapes = !app.editor_state.annotate.shapes.is_empty();
-            let has_selection = app.editor_state.annotate.selected.is_some();
+            let has_selection = !app.editor_state.annotate.selected.is_empty();
             if ui
                 .add_enabled(has_shapes, egui::Button::new("Apply"))
                 .on_hover_text("Burn annotations into the image as one undo step")
@@ -519,7 +561,35 @@ fn draw_image(
                 }
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Duplicate"))
+                .add_enabled(has_selection, egui::Button::new("Cut").shortcut_text("Ctrl+X"))
+                .clicked()
+            {
+                crate::annotate::cut_to_clipboard(ann, &ctx);
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Copy").shortcut_text("Ctrl+C"))
+                .clicked()
+            {
+                crate::annotate::copy_to_clipboard(ann, &ctx);
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(ann.can_paste(), egui::Button::new("Paste").shortcut_text("Ctrl+V"))
+                .clicked()
+            {
+                ann.paste(tex_size);
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(has_shapes, egui::Button::new("Select All").shortcut_text("Ctrl+A"))
+                .clicked()
+            {
+                ann.select_all();
+                ui.close_menu();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Duplicate").shortcut_text("Ctrl+D"))
                 .clicked()
             {
                 ann.duplicate_selected();
@@ -554,7 +624,7 @@ fn draw_image(
             if ui.button("Exit Draw Mode").clicked() {
                 app.editor_state.annotate.active = false;
                 app.editor_state.annotate.draft = None;
-                app.editor_state.annotate.selected = None;
+                app.editor_state.annotate.selected.clear();
                 ui.close_menu();
             }
         });
@@ -614,10 +684,16 @@ fn draw_image(
             crate::annotate::render::paint_shapes(
                 ui.painter(),
                 &ann.shapes,
-                ann.selected,
+                &ann.selected,
                 app.viewer_state.zoom,
                 to_screen,
             );
+            if let Some((a, b)) = ann.marquee {
+                crate::annotate::render::paint_marquee(
+                    ui.painter(),
+                    egui::Rect::from_two_pos(to_screen(a), to_screen(b)),
+                );
+            }
             if let Some(d) = &ann.draft {
                 crate::annotate::render::paint_draft(
                     ui.painter(),
@@ -664,6 +740,58 @@ fn ctx_input(ctx: &egui::Context) -> (Option<egui::Pos2>, Vec2) {
     ctx.input(|i| (i.pointer.hover_pos(), i.raw_scroll_delta))
 }
 
+// Distance one arrow key press moves the selection, in image px.
+fn nudge_delta(key: egui::Key, shift: bool) -> Option<Vec2> {
+    let step = if shift { 10.0 } else { 1.0 };
+    match key {
+        egui::Key::ArrowLeft => Some(Vec2::new(-step, 0.0)),
+        egui::Key::ArrowRight => Some(Vec2::new(step, 0.0)),
+        egui::Key::ArrowUp => Some(Vec2::new(0.0, -step)),
+        egui::Key::ArrowDown => Some(Vec2::new(0.0, step)),
+        _ => None,
+    }
+}
+
+// Ctrl+C/X/V reach egui as Copy/Cut/Paste events instead of Key events.
+fn handle_annotate_clipboard(
+    app: &mut App,
+    ctx: &egui::Context,
+    draw_rect: egui::Rect,
+    tex_size: Vec2,
+    mouse_pos: Option<egui::Pos2>,
+) {
+    let ann = &mut app.editor_state.annotate;
+    if !ann.active || ctx.wants_keyboard_input() {
+        return;
+    }
+    // Collected first: `copy_text` must not run while `ctx.input` holds its lock.
+    let events: Vec<egui::Event> = ctx.input(|i| {
+        i.events
+            .iter()
+            .filter(|e| matches!(e, egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_)))
+            .cloned()
+            .collect()
+    });
+    for event in events {
+        match event {
+            egui::Event::Copy => crate::annotate::copy_to_clipboard(ann, ctx),
+            egui::Event::Cut => crate::annotate::cut_to_clipboard(ann, ctx),
+            egui::Event::Paste(text) if text == crate::annotate::CLIPBOARD_MARKER => {
+                ann.paste(tex_size);
+            }
+            egui::Event::Paste(text) => {
+                let at = mouse_pos
+                    .filter(|p| draw_rect.contains(*p))
+                    .map_or((tex_size / 2.0).to_pos2(), |p| {
+                        screen_to_image_pos(p, draw_rect, tex_size)
+                    });
+                ann.paste_text(&text, at, tex_size);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn screen_delta_to_image(delta: egui::Vec2, zoom: f32) -> egui::Vec2 {
     delta / zoom.max(1e-3)
 }
@@ -693,6 +821,7 @@ fn handle_annotate_drag(
         .map(|p| screen_to_image_pos(p, draw_rect, tex_size));
     let hover_pos = mouse_pos.map(|p| screen_to_image_pos(p, draw_rect, tex_size));
     let tolerance = 8.0 / zoom.max(1e-3);
+    let additive = drag.ctx.input(|i| i.modifiers.shift);
     let ann = &mut app.editor_state.annotate;
     // The selected object's resize handles work with every tool, so a freshly drawn
     // line can be adjusted without switching to Select first.
@@ -700,7 +829,7 @@ fn handle_annotate_drag(
         ann.drag_snapped = false;
         ann.drag_mode = None;
         if let Some(pos) = press_pos {
-            let handle = ann.selected.and_then(|i| ann.shapes.get(i)).and_then(|s| {
+            let handle = ann.single_selected().and_then(|i| ann.shapes.get(i)).and_then(|s| {
                 s.handles()
                     .iter()
                     .position(|h| (*h - pos).length() <= tolerance)
@@ -710,8 +839,8 @@ fn handle_annotate_drag(
             } else if drag.ctx.input(|i| i.modifiers.ctrl) {
                 // Ctrl+drag grabs and moves the object under the pointer with any tool.
                 let hit = ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance));
-                if hit.is_some() {
-                    ann.select(hit);
+                if let Some(i) = hit {
+                    ann.grab(i, additive);
                     ann.drag_mode = Some(DragMode::Move);
                 }
             }
@@ -723,22 +852,23 @@ fn handle_annotate_drag(
     if let Some(mode) = ann.drag_mode {
         if drag.dragged() {
             let delta = screen_delta_to_image(drag.drag_delta(), zoom);
-            if let Some(i) = ann.selected.filter(|i| *i < ann.shapes.len()) {
-                let changes = match mode {
+            let changes = !ann.selected.is_empty()
+                && match mode {
                     DragMode::Move => delta != Vec2::ZERO,
                     DragMode::Handle(_) => hover_pos.is_some(),
                 };
-                if changes {
-                    // One undo step per gesture, taken right before the first change.
-                    if !ann.drag_snapped {
-                        ann.snapshot();
-                        ann.drag_snapped = true;
+            if changes {
+                // One undo step per gesture, taken right before the first change.
+                if !ann.drag_snapped {
+                    ann.snapshot();
+                    ann.drag_snapped = true;
+                }
+                match (mode, hover_pos, ann.single_selected()) {
+                    (DragMode::Move, _, _) => ann.translate_selected(delta),
+                    (DragMode::Handle(id), Some(pos), Some(i)) => {
+                        ann.shapes[i].drag_handle(id, pos)
                     }
-                    match (mode, hover_pos) {
-                        (DragMode::Move, _) => ann.shapes[i].translate(delta),
-                        (DragMode::Handle(id), Some(pos)) => ann.shapes[i].drag_handle(id, pos),
-                        _ => {}
-                    }
+                    _ => {}
                 }
             }
         }
@@ -747,11 +877,43 @@ fn handle_annotate_drag(
         }
         return;
     }
+    if ann.marquee.is_some() {
+        if drag.dragged() {
+            if let (Some((_, current)), Some(pos)) = (ann.marquee.as_mut(), hover_pos) {
+                *current = pos;
+            }
+        }
+        if drag.drag_stopped() {
+            ann.finish_marquee();
+        }
+        return;
+    }
     // Plain click on an existing object selects it, whatever drawing tool is active.
     if drag.clicked() && ann.tool != Tool::Select && !ann.tool.is_stamp() {
         if let Some(pos) = hover_pos {
             let hit = ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance));
-            ann.select(hit);
+            // Objects win over detection, so existing ones stay clickable.
+            if hit.is_none()
+                && !additive
+                && ann.tool.takes_region()
+                && app.editor_state.auto_region.enabled
+            {
+                let params = app.config.auto_region;
+                let region = crate::editor::auto_region_at(&mut app.editor_state, &params, pos);
+                let ann = &mut app.editor_state.annotate;
+                ann.select(None);
+                if let Some(r) = region {
+                    ann.draft = Some(Draft {
+                        tool: ann.tool,
+                        start: r.min,
+                        current: r.max,
+                        points: Vec::new(),
+                    });
+                    commit_draft(ann);
+                }
+                return;
+            }
+            ann.click_select(hit, additive);
         }
         return;
     }
@@ -760,16 +922,22 @@ fn handle_annotate_drag(
         if drag.drag_started() {
             if let Some(pos) = press_pos {
                 let hit = ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance));
-                ann.select(hit);
-                if hit.is_some() {
+                if let Some(i) = hit {
+                    ann.grab(i, additive);
                     ann.drag_mode = Some(DragMode::Move);
+                } else {
+                    // Empty canvas: box-select. Shift keeps the current selection.
+                    if !additive {
+                        ann.select(None);
+                    }
+                    ann.marquee = Some((pos, pos));
                 }
             }
         }
         if drag.clicked() {
             let hit = hover_pos
                 .and_then(|pos| ann.shapes.iter().rposition(|s| s.hit_test(pos, tolerance)));
-            ann.select(hit);
+            ann.click_select(hit, additive);
         }
         return;
     }

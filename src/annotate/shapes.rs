@@ -42,6 +42,21 @@ impl ImgRect {
         (self.max.x - self.min.x).max(0.0)
     }
 
+    // Inclusive, so zero-height bounds of a horizontal line still count.
+    pub fn intersects(self, other: ImgRect) -> bool {
+        self.min.x <= other.max.x
+            && other.min.x <= self.max.x
+            && self.min.y <= other.max.y
+            && other.min.y <= self.max.y
+    }
+
+    pub fn union(self, other: ImgRect) -> ImgRect {
+        ImgRect {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+        }
+    }
+
     pub fn height(self) -> f32 {
         (self.max.y - self.min.y).max(0.0)
     }
@@ -97,6 +112,20 @@ pub fn rotate_about(p: egui::Pos2, center: egui::Pos2, angle: f32) -> egui::Pos2
 pub const ROTATE_HANDLE_OFFSET: f32 = 28.0;
 
 impl Style {
+    // Copy only the fields that differ between `before` and `after`, so editing one
+    // property on a multi-selection leaves each object's other properties alone.
+    // Angle is per-object and never comes from the panel.
+    pub fn apply_changes(&mut self, before: &Style, after: &Style) {
+        macro_rules! merge {
+            ($($field:ident),*) => {
+                $(if before.$field != after.$field {
+                    self.$field = after.$field;
+                })*
+            };
+        }
+        merge!(color, width, filled, opacity, font_size, dashed, shadow, fill_color, outline);
+    }
+
     // Interior color with opacity applied.
     pub fn effective_fill(self) -> egui::Color32 {
         let f = self.fill_color;

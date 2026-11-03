@@ -7,6 +7,13 @@ use operations::{ColorAdjustments, EditOp, ResizeFilter, ResizeMode};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+// Click-to-detect settings shared by the crop tool and the region annotation tools.
+pub struct AutoRegion {
+    pub enabled: bool,
+    // The last click found nothing usable, so the panel can say why nothing happened.
+    pub missed: bool,
+}
+
 pub struct State {
     pub visible: bool,
     pub history: Vec<EditOp>,
@@ -18,6 +25,7 @@ pub struct State {
     pub crop_active: bool,
     pub crop_start: Option<egui::Pos2>,
     pub crop_end: Option<egui::Pos2>,
+    pub auto_region: AutoRegion,
     pub resize_width: u32,
     pub resize_height: u32,
     pub resize_lock_aspect: bool,
@@ -48,6 +56,10 @@ impl State {
             crop_active: false,
             crop_start: None,
             crop_end: None,
+            auto_region: AutoRegion {
+                enabled: false,
+                missed: false,
+            },
             resize_width: 0,
             resize_height: 0,
             resize_lock_aspect: true,
@@ -76,6 +88,7 @@ impl State {
             self.history.clear();
             self.history_index = 0;
             self.annotate.clear();
+            self.auto_region.missed = false;
             self.save_as_filename = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -520,6 +533,7 @@ fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     }
     if app.editor_state.crop_active {
         ui.label("Drag a rectangle over the image.");
+        auto_region_controls(ui, &mut app.editor_state.auto_region, &mut app.config.auto_region);
         ui.horizontal(|ui| {
             if ui.button("Apply Crop").clicked() {
                 apply_crop(app, ctx);
@@ -531,6 +545,52 @@ fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
             }
         });
     }
+}
+
+fn auto_region_controls(
+    ui: &mut egui::Ui,
+    auto: &mut AutoRegion,
+    params: &mut operations::RegionParams,
+) {
+    ui.checkbox(&mut auto.enabled, "Auto Region")
+        .on_hover_text("Click the image to detect the area around that point");
+    if auto.enabled {
+        ui.add(egui::Slider::new(&mut params.tolerance, 0..=128).text("Tolerance"))
+            .on_hover_text("Higher merges more different colors into the area");
+        ui.add(egui::Slider::new(&mut params.padding, -50..=50).text("Padding px"))
+            .on_hover_text("Grow (+) or shrink (-) the detected rectangle on every side");
+        ui.add(egui::Slider::new(&mut params.min_size, 1..=500).text("Min size px"))
+            .on_hover_text("Ignore areas whose longer side is smaller than this");
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut params.follow_gradient, "Follow gradient")
+                .on_hover_text("Compare neighbouring pixels instead of the clicked color");
+            ui.checkbox(&mut params.diagonal, "Diagonal")
+                .on_hover_text("Let the area spread across diagonal pixel corners");
+            if ui.button("Reset").clicked() {
+                *params = Default::default();
+            }
+        });
+        if auto.missed {
+            ui.small("No enclosed area there. Try another spot or tolerance.");
+        }
+    }
+}
+
+// Detect the area around `pos` (image px) on the current image, recording a miss.
+pub(crate) fn auto_region_at(
+    state: &mut State,
+    params: &operations::RegionParams,
+    pos: egui::Pos2,
+) -> Option<crate::annotate::ImgRect> {
+    let region = state
+        .current_image
+        .as_ref()
+        .and_then(|image| operations::detect_region(image, (pos.x as u32, pos.y as u32), params));
+    state.auto_region.missed = region.is_none();
+    region.map(|(x, y, w, h)| crate::annotate::ImgRect {
+        min: egui::pos2(x as f32, y as f32),
+        max: egui::pos2((x + w) as f32, (y + h) as f32),
+    })
 }
 
 fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
@@ -572,7 +632,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
                 app.editor_state.crop_active = false;
             } else {
                 app.editor_state.annotate.draft = None;
-                app.editor_state.annotate.selected = None;
+                app.editor_state.annotate.selected.clear();
             }
         }
         let ann = &mut app.editor_state.annotate;
@@ -585,12 +645,25 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     });
     ui.small(
         "Left: draw / drag handles (blue knob rotates)  |  Ctrl+drag: move object  |  \
+         Select tool: drag empty area to box-select  |  Shift+click: add/remove  |  \
+         Ctrl+A/C/X/V/D: select all, copy, cut, paste, duplicate  |  \
+         Arrows: nudge (Shift: 10 px)  |  \
          Middle: pan  |  Right: menu  |  Del: delete  |  Esc: back out",
     );
+
+    let image_bounds = app
+        .editor_state
+        .current_image
+        .as_ref()
+        .map_or(egui::Vec2::INFINITY, |img| {
+            let (w, h) = img.dimensions();
+            egui::vec2(w as f32, h as f32)
+        });
 
     // Style controls edit the panel style and, live, the selected object.
     let mut style_changed = false;
     let ann = &mut app.editor_state.annotate;
+    let style_before = ann.style;
     ui.horizontal(|ui| {
         ui.label("Color:");
         let mut color = ann.style.color;
@@ -643,11 +716,11 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     }
     if style_changed {
         // One slider drag = one undo step: snapshot before the first change only.
-        if ann.selected.is_some() && !ann.style_edit_open {
+        if !ann.selected.is_empty() && !ann.style_edit_open {
             ann.snapshot();
         }
         ann.style_edit_open = true;
-        ann.apply_style_to_selected();
+        ann.apply_style_to_selected(&style_before);
     }
     if !ctx.input(|i| i.pointer.any_down()) {
         ann.style_edit_open = false;
@@ -655,6 +728,9 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
 
     if ann.tool == Tool::BlurRegion {
         ui.checkbox(&mut ann.mosaic, "Mosaic (else blur)");
+    }
+    if ann.tool.takes_region() {
+        auto_region_controls(ui, &mut app.editor_state.auto_region, &mut app.config.auto_region);
     }
     if matches!(ann.tool, Tool::Text | Tool::Callout) {
         ui.add(
@@ -668,7 +744,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     }
     // Edit the text of a selected Text / Callout object in place.
     let selected_text = ann
-        .selected
+        .single_selected()
         .and_then(|i| ann.shapes.get(i))
         .and_then(|s| match s {
             crate::annotate::Shape::Text { text, .. }
@@ -683,7 +759,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
         }
         if resp.changed() {
             if let Some(text) = ann
-                .selected
+                .single_selected()
                 .and_then(|i| ann.shapes.get_mut(i))
                 .and_then(|s| s.text_mut())
             {
@@ -694,7 +770,22 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
 
     ui.separator();
     ui.horizontal_wrapped(|ui| {
-        let has_sel = ann.selected.is_some();
+        let has_sel = !ann.selected.is_empty();
+        if ui.add_enabled(has_sel, egui::Button::new("Cut")).clicked() {
+            crate::annotate::cut_to_clipboard(ann, ctx);
+        }
+        if ui.add_enabled(has_sel, egui::Button::new("Copy")).clicked() {
+            crate::annotate::copy_to_clipboard(ann, ctx);
+        }
+        if ui.add_enabled(ann.can_paste(), egui::Button::new("Paste")).clicked() {
+            ann.paste(image_bounds);
+        }
+        if ui
+            .add_enabled(!ann.shapes.is_empty(), egui::Button::new("Select All"))
+            .clicked()
+        {
+            ann.select_all();
+        }
         if ui.add_enabled(has_sel, egui::Button::new("Duplicate")).clicked() {
             ann.duplicate_selected();
         }
@@ -708,7 +799,11 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
             ann.delete_selected();
         }
     });
-    ui.label(format!("{} object(s)", ann.shapes.len()));
+    ui.label(format!(
+        "{} object(s), {} selected",
+        ann.shapes.len(),
+        ann.selected.len()
+    ));
     let has = !ann.shapes.is_empty();
     let (apply, clear) = ui
         .horizontal(|ui| {
@@ -1144,6 +1239,27 @@ mod tests {
         state.original_image = Some(image.clone());
         state.current_image = Some(image);
         state
+    }
+
+    #[test]
+    fn test_auto_region_returns_pixel_edges_and_flags_misses() {
+        let image = DynamicImage::ImageRgba8(image::RgbaImage::from_fn(10, 10, |x, _| {
+            image::Rgba(if x >= 6 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            })
+        }));
+        let mut state = state_with_image(image);
+        let params = operations::RegionParams::default();
+        let rect = auto_region_at(&mut state, &params, egui::pos2(7.5, 3.0)).unwrap();
+        assert_eq!(rect.min, egui::pos2(6.0, 0.0));
+        assert_eq!(rect.max, egui::pos2(10.0, 10.0));
+        assert!(!state.auto_region.missed);
+
+        state.current_image = Some(colored_image(10, 10, 50));
+        assert!(auto_region_at(&mut state, &params, egui::pos2(5.0, 5.0)).is_none());
+        assert!(state.auto_region.missed);
     }
 
     #[test]

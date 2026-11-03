@@ -72,3 +72,4 @@ src/
 - **Editor's `save_as`** writes alongside source file with new extension (no file dialog).
 - **Drive roots** on Windows are probed `A:\`–`Z:\` and filtered by `exists()` (`browser/mod.rs`).
 - **Viewer status bar** no longer calls `std::fs::metadata` per frame (file info goes through `file_cache.rs`).
+- **Ctrl+C/X/V are not `Key` events** — egui-winit turns them into `Event::Copy`/`Cut`/`Paste`, and emits `Paste` only when the system clipboard holds text. Annotation copy therefore writes `CLIPBOARD_MARKER` to the system clipboard so Ctrl+V can arrive. Never call `ctx.copy_text` inside a `ctx.input` closure (deadlock).

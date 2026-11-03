@@ -1,4 +1,5 @@
 use image::{imageops, DynamicImage, RgbaImage};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,10 +270,230 @@ fn sepia(img: &DynamicImage) -> DynamicImage {
     DynamicImage::ImageRgba8(rgba)
 }
 
+// Tunable Auto Region settings, saved in config.json.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegionParams {
+    // Largest per-channel difference still counted as the same area.
+    pub tolerance: u8,
+    // Compare each pixel with its neighbour instead of the clicked pixel, so the
+    // fill can walk along a soft gradient.
+    pub follow_gradient: bool,
+    // Let the fill cross diagonal pixel corners (8-way instead of 4-way).
+    pub diagonal: bool,
+    // Reject a region whose longer side is below this, in image px.
+    pub min_size: u32,
+    // Grow (positive) or shrink (negative) the result on every side, in image px.
+    pub padding: i32,
+}
+
+impl Default for RegionParams {
+    fn default() -> Self {
+        Self {
+            tolerance: 32,
+            follow_gradient: false,
+            diagonal: false,
+            min_size: 4,
+            padding: 0,
+        }
+    }
+}
+
+// Magic-wand detection: flood-fill the connected pixels similar to the seed and
+// return their bounding box as (x, y, width, height). Returns None for a region under
+// `min_size`, when the fill spans the entire image (the click landed on an open
+// background), or when negative padding leaves nothing.
+pub fn detect_region(
+    image: &DynamicImage,
+    seed: (u32, u32),
+    params: &RegionParams,
+) -> Option<(u32, u32, u32, u32)> {
+    let rgba = image.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let px = rgba.as_raw();
+    let start = (seed.1 as usize).min(h - 1) * w + (seed.0 as usize).min(w - 1);
+    let similar = |a: usize, b: usize| {
+        px[a * 4..a * 4 + 4]
+            .iter()
+            .zip(&px[b * 4..b * 4 + 4])
+            .all(|(a, b)| a.abs_diff(*b) <= params.tolerance)
+    };
+
+    let mut visited = vec![false; w * h];
+    visited[start] = true;
+    let mut stack = vec![start];
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (w, h, 0, 0);
+    while let Some(i) = stack.pop() {
+        let (x, y) = (i % w, i / w);
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+        let reference = if params.follow_gradient { i } else { start };
+        for (dx, dy) in NEIGHBOURS {
+            if !params.diagonal && dx != 0 && dy != 0 {
+                continue;
+            }
+            let (Some(nx), Some(ny)) = (x.checked_add_signed(dx), y.checked_add_signed(dy)) else {
+                continue;
+            };
+            if nx >= w || ny >= h {
+                continue;
+            }
+            let n = ny * w + nx;
+            if !visited[n] && similar(n, reference) {
+                visited[n] = true;
+                stack.push(n);
+            }
+        }
+    }
+
+    let (rw, rh) = (max_x - min_x + 1, max_y - min_y + 1);
+    if rw.max(rh) < params.min_size as usize || (rw == w && rh == h) {
+        return None;
+    }
+    // Padding is applied last and clamped, so it never leaves the image.
+    let pad = params.padding as i64;
+    let x0 = (min_x as i64 - pad).max(0);
+    let y0 = (min_y as i64 - pad).max(0);
+    let x1 = (max_x as i64 + 1 + pad).min(w as i64);
+    let y1 = (max_y as i64 + 1 + pad).min(h as i64);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some((x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32))
+}
+
+const NEIGHBOURS: [(isize, isize); 8] = [
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1),
+    (-1, -1),
+    (1, -1),
+    (-1, 1),
+    (1, 1),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use image::{GenericImageView, Rgba};
+
+    // 20x20 white image with a black outlined box whose inside is grey.
+    fn boxed_image() -> DynamicImage {
+        DynamicImage::ImageRgba8(RgbaImage::from_fn(20, 20, |x, y| {
+            let inside = (5..15).contains(&x) && (4..12).contains(&y);
+            let border = inside && (x == 5 || x == 14 || y == 4 || y == 11);
+            Rgba(match (inside, border) {
+                (_, true) => [0, 0, 0, 255],
+                (true, false) => [120, 120, 120, 255],
+                _ => [255, 255, 255, 255],
+            })
+        }))
+    }
+
+    fn with_tolerance(tolerance: u8) -> RegionParams {
+        RegionParams {
+            tolerance,
+            ..RegionParams::default()
+        }
+    }
+
+    #[test]
+    fn detect_region_finds_the_enclosed_area_bounds() {
+        let params = with_tolerance(10);
+        assert_eq!(detect_region(&boxed_image(), (9, 8), &params), Some((6, 5, 8, 6)));
+    }
+
+    #[test]
+    fn detect_region_padding_grows_shrinks_and_clamps() {
+        let padded = |padding| RegionParams {
+            padding,
+            ..with_tolerance(10)
+        };
+        let image = boxed_image();
+        assert_eq!(detect_region(&image, (9, 8), &padded(2)), Some((4, 3, 12, 10)));
+        assert_eq!(detect_region(&image, (9, 8), &padded(-1)), Some((7, 6, 6, 4)));
+        assert_eq!(detect_region(&image, (9, 8), &padded(-10)), None);
+        assert_eq!(detect_region(&image, (9, 8), &padded(50)), Some((0, 0, 20, 20)));
+    }
+
+    #[test]
+    fn detect_region_min_size_rejects_small_areas() {
+        let params = |min_size| RegionParams {
+            min_size,
+            ..with_tolerance(10)
+        };
+        assert_eq!(detect_region(&boxed_image(), (9, 8), &params(9)), None);
+        assert!(detect_region(&boxed_image(), (9, 8), &params(8)).is_some());
+    }
+
+    #[test]
+    fn detect_region_diagonal_setting_crosses_pixel_corners() {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_fn(20, 20, |x, y| {
+            Rgba(if x == y && (5..12).contains(&x) {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            })
+        }));
+        assert_eq!(detect_region(&image, (5, 5), &with_tolerance(10)), None);
+        let diagonal = RegionParams {
+            diagonal: true,
+            ..with_tolerance(10)
+        };
+        assert_eq!(detect_region(&image, (5, 5), &diagonal), Some((5, 5, 7, 7)));
+    }
+
+    #[test]
+    fn detect_region_follow_gradient_walks_a_soft_ramp() {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_fn(20, 20, |x, _| {
+            let v = if x < 10 { (x * 10) as u8 } else { 255 };
+            Rgba([v, v, v, 255])
+        }));
+        assert_eq!(detect_region(&image, (0, 0), &with_tolerance(15)), Some((0, 0, 2, 20)));
+        let follow = RegionParams {
+            follow_gradient: true,
+            ..with_tolerance(15)
+        };
+        assert_eq!(detect_region(&image, (0, 0), &follow), Some((0, 0, 10, 20)));
+    }
+
+    #[test]
+    fn detect_region_rejects_open_background_and_specks() {
+        assert_eq!(detect_region(&boxed_image(), (0, 0), &with_tolerance(10)), None);
+        let speck = DynamicImage::ImageRgba8(RgbaImage::from_fn(20, 20, |x, y| {
+            Rgba(if (x, y) == (9, 9) {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            })
+        }));
+        assert_eq!(detect_region(&speck, (9, 9), &with_tolerance(10)), None);
+    }
+
+    #[test]
+    fn detect_region_tolerance_decides_what_merges() {
+        // Inside and border differ by 120: a high tolerance swallows the border.
+        let params = with_tolerance(130);
+        assert_eq!(detect_region(&boxed_image(), (9, 8), &params), Some((5, 4, 10, 8)));
+    }
+
+    #[test]
+    fn detect_region_clamps_a_seed_on_the_far_edge() {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_fn(10, 10, |x, _| {
+            Rgba(if x >= 6 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 255, 255, 255]
+            })
+        }));
+        assert_eq!(detect_region(&image, (10, 10), &with_tolerance(10)), Some((6, 0, 4, 10)));
+    }
 
     fn sample_image() -> DynamicImage {
         DynamicImage::ImageRgba8(RgbaImage::from_fn(2, 1, |x, _| {

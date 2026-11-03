@@ -35,6 +35,9 @@ pub struct Config {
     pub thumb_size: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
+    // Default keeps config files written before this field loadable.
+    #[serde(default)]
+    pub auto_region: crate::editor::operations::RegionParams,
 }
 
 impl Default for Config {
@@ -50,6 +53,7 @@ impl Default for Config {
             column_widths: ColumnWidths::default(),
             thumb_size: 140.0,
             theme: default_theme(),
+            auto_region: Default::default(),
         }
     }
 }
@@ -78,5 +82,31 @@ impl Config {
         p.push("cache");
         p.push("config.json");
         p
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_without_auto_region_still_loads_with_defaults() {
+        let mut value = serde_json::to_value(Config::default()).unwrap();
+        value.as_object_mut().unwrap().remove("auto_region");
+        value["thumb_size"] = serde_json::json!(99.0);
+        let config: Config = serde_json::from_value(value).unwrap();
+        assert_eq!(config.thumb_size, 99.0);
+        assert_eq!(config.auto_region, Default::default());
+    }
+
+    #[test]
+    fn auto_region_settings_round_trip() {
+        let mut config = Config::default();
+        config.auto_region.tolerance = 77;
+        config.auto_region.padding = -3;
+        config.auto_region.diagonal = true;
+        let text = serde_json::to_string(&config).unwrap();
+        let loaded: Config = serde_json::from_str(&text).unwrap();
+        assert_eq!(loaded.auto_region, config.auto_region);
     }
 }
