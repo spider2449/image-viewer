@@ -118,8 +118,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         .clicked()
                     {
                         if app.editor_state.visible {
-                            crate::editor::discard_adjustment_preview(app);
-                            app.editor_state.visible = false;
+                            crate::editor::close(app, ctx);
                         } else {
                             app.editor_state.visible = true;
                         }

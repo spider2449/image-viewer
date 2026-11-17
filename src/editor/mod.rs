@@ -1,5 +1,6 @@
 pub mod operations;
 pub mod crop;
+mod panel;
 
 use crate::annotate::Shape;
 use crate::app::App;
@@ -12,6 +13,8 @@ use std::sync::Arc;
 
 pub struct State {
     pub visible: bool,
+    section: panel::Section,
+    save_error: Option<String>,
     pub history: Vec<EditOp>,
     pub history_index: usize,
     pub pending_image_index: Option<usize>,
@@ -46,6 +49,8 @@ impl State {
     pub fn new() -> Self {
         Self {
             visible: false,
+            section: panel::Section::Adjust,
+            save_error: None,
             history: Vec::new(),
             history_index: 0,
             pending_image_index: None,
@@ -253,195 +258,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     let colors = app.theme_colors();
     let mut preview_changed = false;
 
-    egui::SidePanel::right("editor_panel")
-        .resizable(true)
-        .frame(egui::Frame {
-            fill: colors.panel_bg,
-            inner_margin: egui::Margin::symmetric(8, 8),
-            ..Default::default()
-        })
-        .default_width(250.0)
-        .min_width(200.0)
-        .show(ctx, |ui| {
-            let colors = colors;
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Edit");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("X").clicked() {
-                            discard_adjustment_preview(app);
-                            app.editor_state.visible = false;
-                        }
-                    });
-                });
-                ui.separator();
-
-                ui.horizontal_wrapped(|ui| {
-                    let has_preview = !app.editor_state.adjustments.is_neutral();
-                    let can_undo = has_preview || app.editor_state.can_undo();
-                    if ui
-                        .add_enabled(can_undo, egui::Button::new("\u{21A9} Undo"))
-                        .clicked()
-                    {
-                        undo(app, ctx);
-                    }
-                    let can_redo = !has_preview && app.editor_state.can_redo();
-                    if ui
-                        .add_enabled(can_redo, egui::Button::new("\u{21AA} Redo"))
-                        .clicked()
-                    {
-                        redo(app, ctx);
-                    }
-                    if ui
-                        .add_enabled(can_undo, egui::Button::new("Revert All"))
-                        .on_hover_text("Return to the image loaded from disk")
-                        .clicked()
-                    {
-                        revert_all(app, ctx);
-                    }
-                });
-                let edit_count = app.editor_state.history_index;
-                if edit_count > 0 || !app.editor_state.adjustments.is_neutral() {
-                    let preview_suffix = if app.editor_state.adjustments.is_neutral() {
-                        ""
-                    } else {
-                        " + live preview"
-                    };
-                    ui.colored_label(
-                        colors.text_secondary,
-                        format!("{edit_count} unsaved edit(s){preview_suffix}"),
-                    );
-                }
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Adjustments")
-                        .strong()
-                        .color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| {
-                    selection_scope_hint(app, ui);
-                    preview_changed |= adjustment_controls(ui, &mut app.editor_state.adjustments);
-                    ui.horizontal(|ui| {
-                        let can_apply = !app.editor_state.adjustments.is_neutral();
-                        if ui
-                            .add_enabled(can_apply, egui::Button::new("Apply"))
-                            .clicked()
-                        {
-                            if app.editor_state.commit_adjustments() {
-                                sync_editor_image(app, ctx);
-                            }
-                        }
-                        if ui
-                            .add_enabled(can_apply, egui::Button::new("Reset"))
-                            .clicked()
-                        {
-                            reset_adjustment_preview(app, ctx);
-                        }
-                    });
-                });
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Quick Effects")
-                        .strong()
-                        .color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| {
-                    selection_scope_hint(app, ui);
-                    ui.horizontal_wrapped(|ui| {
-                        for (label, op) in [
-                            ("Auto Contrast", EditOp::AutoContrast),
-                            ("Grayscale", EditOp::Grayscale),
-                            ("Sepia", EditOp::Sepia),
-                            ("Invert", EditOp::Invert),
-                        ] {
-                            if ui.button(label).clicked() {
-                                apply_op(app, ctx, op);
-                            }
-                        }
-                    });
-                    ui.add(
-                        egui::Slider::new(&mut app.editor_state.blur_sigma, 0.1..=20.0)
-                            .text("Blur radius"),
-                    );
-                    if ui.button("Apply Blur").clicked() {
-                        apply_op(app, ctx, EditOp::Blur(app.editor_state.blur_sigma));
-                    }
-                    ui.add(
-                        egui::Slider::new(&mut app.editor_state.sharpen_sigma, 0.1..=10.0)
-                            .text("Sharpen radius"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut app.editor_state.sharpen_threshold, 0..=50)
-                            .text("Threshold"),
-                    );
-                    if ui.button("Apply Sharpen").clicked() {
-                        apply_op(
-                            app,
-                            ctx,
-                            EditOp::Sharpen {
-                                sigma: app.editor_state.sharpen_sigma,
-                                threshold: app.editor_state.sharpen_threshold,
-                            },
-                        );
-                    }
-                });
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Magic Wand").strong().color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| wand_controls(app, ctx, ui));
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Transform")
-                        .strong()
-                        .color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| transform_controls(app, ctx, ui));
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Annotate").strong().color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| annotate_controls(app, ctx, ui));
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Resize").strong().color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| {
-                    resize_controls(app, ctx, ui, colors.text_secondary)
-                });
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Clipboard")
-                        .strong()
-                        .color(colors.accent),
-                )
-                .show(ui, |ui| {
-                    if ui.button("Paste Image").clicked() {
-                        paste_from_clipboard(app, ctx);
-                    }
-                });
-
-                ui.separator();
-                egui::CollapsingHeader::new(
-                    egui::RichText::new("Save As").strong().color(colors.accent),
-                )
-                .default_open(true)
-                .show(ui, |ui| save_controls(app, ctx, ui));
-            });
-        });
+    preview_changed |= panel::show(app, ctx, colors);
 
     // The live preview follows the selection it is limited to.
     let selection_id = app
@@ -518,16 +335,23 @@ fn handle_history_shortcuts(app: &mut App, ctx: &egui::Context) {
         let undo = ctrl && !shift && input.key_pressed(egui::Key::Z);
         (undo, redo)
     });
-    // Un-burned annotation objects have their own history, checked first.
+    if undo_requested || redo_requested {
+        history_action(app, ctx, redo_requested);
+    }
+}
+
+fn history_action(app: &mut App, ctx: &egui::Context, forward: bool) {
     let ann = &mut app.editor_state.annotate;
-    if ann.active || !ann.shapes.is_empty() {
-        if undo_requested && ann.undo() || redo_requested && ann.redo() {
+    if ann.can_undo() || ann.can_redo() {
+        if if forward { ann.redo() } else { ann.undo() } {
             return;
         }
     }
-    if redo_requested && app.editor_state.adjustments.is_neutral() {
-        redo(app, ctx);
-    } else if undo_requested {
+    if forward {
+        if app.editor_state.adjustments.is_neutral() {
+            redo(app, ctx);
+        }
+    } else {
         undo(app, ctx);
     }
 }
@@ -743,6 +567,10 @@ fn selection_to_object(
     };
     let shape = build(selection.bounds_rect(), selection.object_mask(), editor.annotate.style);
     editor.annotate.add_object(shape);
+    editor.section = panel::Section::Annotate;
+    editor.wand.active = false;
+    editor.annotate.active = true;
+    editor.annotate.tool = crate::annotate::Tool::Select;
 }
 
 fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
@@ -789,21 +617,12 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
                 app.editor_state.annotate.selected.clear();
             }
         }
-        let ann = &mut app.editor_state.annotate;
-        if ui.add_enabled(ann.can_undo(), egui::Button::new("Undo")).clicked() {
-            ann.undo();
-        }
-        if ui.add_enabled(ann.can_redo(), egui::Button::new("Redo")).clicked() {
-            ann.redo();
-        }
     });
-    ui.small(
-        "Left: draw / drag handles (blue knob rotates)  |  Ctrl+drag: move object  |  \
-         Select tool: drag empty area to box-select  |  Shift+click: add/remove  |  \
-         Ctrl+A/C/X/V/D: select all, copy, cut, paste, duplicate  |  \
-         Arrows: nudge (Shift: 10 px)  |  \
-         Middle: pan  |  Right: menu  |  Del: delete  |  Esc: back out",
-    );
+    ui.collapsing("Mouse & keyboard help", |ui| {
+        ui.small("Drag to draw or move handles. Ctrl+drag moves an object. Middle drag pans.");
+        ui.small("Select: drag empty space to box-select; Shift+click adds or removes.");
+        ui.small("Ctrl+A/C/X/V/D: select all, copy, cut, paste, duplicate. Arrows nudge; Shift moves 10 px. Delete removes; Esc backs out.");
+    });
 
     let image_bounds = app
         .editor_state
@@ -959,11 +778,11 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     let (apply, clear) = ui
         .horizontal(|ui| {
             (
-                ui.add_enabled(has, egui::Button::new("Apply"))
+                ui.add_enabled(has, egui::Button::new("Apply objects"))
                     .on_hover_text("Burn annotations into the image as one undo step")
                     .clicked(),
                 // Clear keeps draw mode on so the user can keep sketching.
-                ui.add_enabled(has, egui::Button::new("Clear")).clicked(),
+                ui.add_enabled(has, egui::Button::new("Clear objects")).clicked(),
             )
         })
         .inner;
@@ -975,6 +794,7 @@ fn annotate_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
 }
 
 pub(crate) fn apply_annotations(app: &mut App, ctx: &egui::Context) {
+    app.editor_state.commit_adjustments();
     let base = match app.editor_state.current_image.as_ref() {
         Some(i) => i.clone(),
         None => return,
@@ -1091,6 +911,7 @@ fn resize_controls(
 }
 
 fn save_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
+    ui.label("Output format");
     egui::ComboBox::new("save_format", "")
         .selected_text(app.editor_state.save_format.to_uppercase())
         .show_ui(ui, |ui| {
@@ -1102,6 +923,7 @@ fn save_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
     if app.editor_state.save_format == "jpeg" {
         ui.add(egui::Slider::new(&mut app.editor_state.save_jpeg_quality, 1..=100).text("Quality"));
     }
+    ui.label("Filename (saved beside the original)");
     egui::TextEdit::singleline(&mut app.editor_state.save_as_filename)
         .hint_text("Enter filename")
         .show(ui);
@@ -1113,7 +935,7 @@ fn save_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
         {
             request_save(app);
         }
-        if ui.button("Save As...").clicked() && !app.editor_state.save_as_filename.is_empty() {
+        if ui.add_enabled(!app.editor_state.save_as_filename.trim().is_empty(), egui::Button::new("Save As?")).clicked() {
             save_as(app, ctx);
         }
     });
@@ -1133,6 +955,7 @@ fn upload_texture(app: &mut App, ctx: &egui::Context, img: &image::DynamicImage)
 }
 
 fn apply_op(app: &mut App, ctx: &egui::Context, op: EditOp) {
+    app.editor_state.commit_adjustments();
     if app.editor_state.apply_operation(&op) {
         app.editor_state.adjustments = ColorAdjustments::default();
         sync_editor_image(app, ctx);
@@ -1158,6 +981,9 @@ fn redo(app: &mut App, ctx: &egui::Context) {
 
 fn revert_all(app: &mut App, ctx: &egui::Context) {
     app.editor_state.adjustments = ColorAdjustments::default();
+    app.editor_state.annotate.clear();
+    app.editor_state.cancel_crop();
+    app.editor_state.wand.selection = None;
     if app.editor_state.revert_all() {
         sync_editor_image(app, ctx);
     } else {
@@ -1184,14 +1010,8 @@ fn reset_adjustment_preview(app: &mut App, ctx: &egui::Context) {
     upload_texture(app, ctx, &image);
 }
 
-pub(crate) fn discard_adjustment_preview(app: &mut App) {
-    if app.editor_state.adjustments.is_neutral() {
-        return;
-    }
-    app.editor_state.adjustments = ColorAdjustments::default();
-    if let Some(path) = app.image_files.get(app.selected_image_index) {
-        app.textures.pop(path.to_string_lossy().as_ref());
-    }
+pub(crate) fn close(app: &mut App, ctx: &egui::Context) {
+    panel::close(app, ctx);
 }
 
 fn sync_editor_image(app: &mut App, ctx: &egui::Context) {
@@ -1348,6 +1168,7 @@ fn write_current_image(
         app.editor_state.save_jpeg_quality,
     ) {
         Ok(()) => {
+            app.editor_state.save_error = None;
             app.editor_state.mark_saved();
             app.scan_folder();
             // Update the filename field to reflect the saved file.
@@ -1357,7 +1178,7 @@ fn write_current_image(
                 app.switch_to_viewer(new_index);
             }
         }
-        Err(e) => eprintln!("Save failed: {e}"),
+        Err(e) => app.editor_state.save_error = Some(format!("Save failed: {e}")),
     }
 }
 
