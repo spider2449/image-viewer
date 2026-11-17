@@ -1,4 +1,5 @@
 pub mod operations;
+pub mod crop;
 
 use crate::annotate::Shape;
 use crate::app::App;
@@ -18,6 +19,7 @@ pub struct State {
     pub original_image: Option<DynamicImage>,
     pub current_image: Option<DynamicImage>,
     pub crop_active: bool,
+    pub crop_drag: Option<crop::Drag>,
     pub crop_start: Option<egui::Pos2>,
     pub crop_end: Option<egui::Pos2>,
     pub wand: MagicWand,
@@ -51,6 +53,7 @@ impl State {
             original_image: None,
             current_image: None,
             crop_active: false,
+            crop_drag: None,
             crop_start: None,
             crop_end: None,
             wand: MagicWand::default(),
@@ -72,7 +75,27 @@ impl State {
         }
     }
 
+    pub(crate) fn cancel_crop(&mut self) {
+        self.crop_active = false;
+        self.crop_drag = None;
+        self.crop_start = None;
+        self.crop_end = None;
+    }
+
+    pub(crate) fn crop_bounds(&self) -> Option<(u32, u32, u32, u32)> {
+        let image = self.current_image.as_ref()?;
+        let start = self.crop_start?;
+        let end = self.crop_end?;
+        let x = start.x.min(end.x).floor().clamp(0.0, image.width() as f32) as u32;
+        let y = start.y.min(end.y).floor().clamp(0.0, image.height() as f32) as u32;
+        let right = start.x.max(end.x).ceil().clamp(0.0, image.width() as f32) as u32;
+        let bottom = start.y.max(end.y).ceil().clamp(0.0, image.height() as f32) as u32;
+        (start.x != end.x && start.y != end.y && right > x && bottom > y)
+            .then_some((x, y, right - x, bottom - y))
+    }
+
     pub fn load_image(&mut self, path: &PathBuf) {
+        self.cancel_crop();
         if let Ok(img) = crate::image_loader::open_image(path) {
             let (w, h) = img.dimensions();
             self.original_image = Some(img.clone());
@@ -111,6 +134,7 @@ impl State {
         let result = op.apply(current);
         if !op.keeps_geometry() {
             self.wand.selection = None;
+            self.cancel_crop();
         }
         self.history.truncate(self.history_index);
         self.history.push(op);
@@ -142,6 +166,7 @@ impl State {
         self.history_index -= 1;
         if !self.history[self.history_index].keeps_geometry() {
             self.wand.selection = None;
+            self.cancel_crop();
         }
         self.rebuild_current();
         true
@@ -158,6 +183,7 @@ impl State {
         let result = operation.apply(current);
         if !operation.keeps_geometry() {
             self.wand.selection = None;
+            self.cancel_crop();
         }
         self.current_image = Some(result);
         self.history_index += 1;
@@ -169,6 +195,7 @@ impl State {
             return false;
         }
         self.history_index = 0;
+        self.cancel_crop();
         self.wand.selection = None;
         self.rebuild_current();
         true
@@ -564,24 +591,32 @@ fn transform_controls(app: &mut App, ctx: &egui::Context, ui: &mut egui::Ui) {
         .selectable_label(app.editor_state.crop_active, "Crop Tool")
         .clicked()
     {
+        app.editor_state.crop_drag = None;
         app.editor_state.crop_active = !app.editor_state.crop_active;
         if app.editor_state.crop_active {
             app.editor_state.wand.active = false;
+            app.editor_state.annotate.active = false;
+            app.editor_state.annotate.draft = None;
+            app.viewer_state.is_slideshow = false;
         } else {
             app.editor_state.crop_start = None;
             app.editor_state.crop_end = None;
         }
     }
     if app.editor_state.crop_active {
-        ui.label("Drag a rectangle over the image.");
+        ui.label("Drag outside the selection to draw a new crop.");
+        ui.small("Drag edges/corners to resize; drag inside to move.");
+        ui.small("Enter: apply crop | Esc: cancel");
+        let bounds = app.editor_state.crop_bounds();
+        if let Some((x, y, width, height)) = bounds {
+            ui.label(format!("{width} x {height} px at ({x}, {y})"));
+        }
         ui.horizontal(|ui| {
-            if ui.button("Apply Crop").clicked() {
+            if ui.add_enabled(bounds.is_some(), egui::Button::new("Apply Crop")).clicked() {
                 apply_crop(app, ctx);
             }
             if ui.button("Cancel").clicked() {
-                app.editor_state.crop_active = false;
-                app.editor_state.crop_start = None;
-                app.editor_state.crop_end = None;
+                app.editor_state.cancel_crop();
             }
         });
     }
@@ -1169,28 +1204,15 @@ fn sync_editor_image(app: &mut App, ctx: &egui::Context) {
     upload_texture(app, ctx, &image);
 }
 
-fn apply_crop(app: &mut App, ctx: &egui::Context) {
-    if let (Some(start), Some(end)) = (app.editor_state.crop_start, app.editor_state.crop_end) {
-        let x = start.x.min(end.x) as u32;
-        let y = start.y.min(end.y) as u32;
-        let w = (start.x - end.x).abs() as u32;
-        let h = (start.y - end.y).abs() as u32;
-        if w > 0 && h > 0 {
-            apply_op(
-                app,
-                ctx,
-                EditOp::Crop {
-                    x,
-                    y,
-                    width: w,
-                    height: h,
-                },
-            );
-        }
-        app.editor_state.crop_active = false;
-        app.editor_state.crop_start = None;
-        app.editor_state.crop_end = None;
-    }
+pub(crate) fn apply_crop(app: &mut App, ctx: &egui::Context) {
+    let Some((x, y, width, height)) = app.editor_state.crop_bounds() else {
+        return;
+    };
+    app.editor_state.commit_adjustments();
+    apply_op(app, ctx, EditOp::Crop { x, y, width, height });
+    app.editor_state.cancel_crop();
+    app.viewer_state.zoom_mode = crate::viewer::ZoomMode::Fit;
+    app.viewer_state.pan_offset = egui::Vec2::ZERO;
 }
 
 fn paste_from_clipboard(app: &mut App, ctx: &egui::Context) {

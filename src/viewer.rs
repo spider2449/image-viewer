@@ -240,6 +240,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
         // Handle keyboard (not while a text field such as the annotation text has focus)
         let typing = ctx.wants_keyboard_input();
+        if !typing && app.editor_state.visible && app.editor_state.crop_active {
+            let (apply, cancel) = ctx.input_mut(|i| {
+                (
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+                )
+            });
+            if cancel {
+                app.editor_state.cancel_crop();
+            } else if apply {
+                crate::editor::apply_crop(app, ctx);
+            }
+        }
         ctx.input(|i| {
             if typing {
                 return;
@@ -462,7 +475,7 @@ fn draw_image(
         }
     }
 
-    let crop_active = app.editor_state.crop_active;
+    let crop_active = app.editor_state.visible && app.editor_state.crop_active;
     let annot_active = app.editor_state.annotate.active;
     let wand_active = app.editor_state.visible && app.editor_state.wand.active;
     let zoom = app.viewer_state.zoom;
@@ -472,16 +485,43 @@ fn draw_image(
         egui::Sense::click_and_drag(),
     );
     if crop_active {
-        if drag.drag_started() {
-            if let Some(pos) = mouse_pos {
-                let img_pos = screen_to_image_pos(pos, draw_rect, tex_size);
-                app.editor_state.crop_start = Some(img_pos);
-                app.editor_state.crop_end = Some(img_pos);
+        use crate::editor::crop::{self, Drag, Part};
+        let selection = app.editor_state.crop_start.zip(app.editor_state.crop_end)
+            .map(|(a, b)| egui::Rect::from_two_pos(a, b));
+        let screen_selection = selection.map(|r| egui::Rect::from_min_max(
+            image_to_screen_pos(r.min, draw_rect, tex_size),
+            image_to_screen_pos(r.max, draw_rect, tex_size),
+        ));
+        let hit = |pos| screen_selection.map_or(Part::New, |r| crop::hit_test(r, pos));
+        if drag.hovered() || drag.dragged() {
+            let part = app.editor_state.crop_drag.map(|d| d.part)
+                .or_else(|| mouse_pos.map(hit)).unwrap_or(Part::New);
+            ui.ctx().set_cursor_icon(part.cursor());
+        }
+        if drag.drag_started_by(egui::PointerButton::Primary) {
+            app.editor_state.crop_drag = None;
+            if let Some(pos) = ui.ctx().input(|i| i.pointer.press_origin()) {
+                let part = hit(pos);
+                if draw_rect.contains(pos) || !matches!(part, Part::New) {
+                    let origin = screen_to_image_pos(pos, draw_rect, tex_size);
+                    app.editor_state.crop_drag = Some(Drag {
+                        part, origin,
+                        rect: selection.unwrap_or(egui::Rect::from_min_max(origin, origin)),
+                    });
+                }
             }
-        } else if drag.dragged() {
-            if let Some(pos) = mouse_pos {
-                app.editor_state.crop_end = Some(screen_to_image_pos(pos, draw_rect, tex_size));
+        }
+        if drag.dragged_by(egui::PointerButton::Primary)
+            || drag.drag_stopped_by(egui::PointerButton::Primary)
+        {
+            if let (Some(state), Some(pos)) = (app.editor_state.crop_drag, drag.interact_pointer_pos()) {
+                let rect = state.update(screen_to_image_pos(pos, draw_rect, tex_size), tex_size);
+                app.editor_state.crop_start = Some(rect.min);
+                app.editor_state.crop_end = Some(rect.max);
             }
+        }
+        if drag.drag_stopped_by(egui::PointerButton::Primary) {
+            app.editor_state.crop_drag = None;
         }
     } else if wand_active {
         if drag.clicked() {
@@ -711,6 +751,12 @@ fn draw_image(
                 egui::Stroke::new(1.5_f32, colors.accent),
                 egui::StrokeKind::Inside,
             );
+            for (pos, _) in crate::editor::crop::handles(sel_rect) {
+                let handle = egui::Rect::from_center_size(pos, Vec2::splat(7.0));
+                painter.rect_filled(handle, 0.0, Color32::WHITE);
+                painter.rect_stroke(handle, 0.0, egui::Stroke::new(1.0_f32, colors.accent), egui::StrokeKind::Inside);
+            }
+
         }
     }
 
