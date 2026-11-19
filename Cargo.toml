@@ -1,10 +1,11 @@
 ﻿[package]
 name = "image-viewer"
-version = "0.1.90"
+version = "0.1.91"
 edition = "2021"
 license = "MIT"
 
 [dependencies]
+dirs = "6"
 eframe = "0.31"
 egui = "0.31"
 exif = { version = "0.6", package = "kamadak-exif" }

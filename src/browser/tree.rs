@@ -126,13 +126,49 @@ pub fn sync_tree_to_current_folder(app: &mut App) {
     }
 }
 
+pub fn quick_access_folders() -> Vec<(&'static str, PathBuf)> {
+    [
+        ("Desktop", dirs::desktop_dir()),
+        ("Downloads", dirs::download_dir()),
+        ("Documents", dirs::document_dir()),
+        ("Pictures", dirs::picture_dir()),
+        ("Music", dirs::audio_dir()),
+        ("Videos", dirs::video_dir()),
+    ]
+    .into_iter()
+    .filter_map(|(name, path)| Some((name, path.filter(|p| p.is_dir())?)))
+    .collect()
+}
+
 pub fn show_tree(app: &mut App, ui: &mut Ui) {
     sync_tree_to_current_folder(app);
     let mut click_folder: Option<PathBuf> = None;
 
-    for node in &app.browser_state.tree_nodes.clone() {
-        show_node(app, ui, node, 0, &mut click_folder);
+    if !app.browser_state.quick_access.is_empty() {
+        egui::CollapsingHeader::new("Quick access")
+            .default_open(true)
+            .show(ui, |ui| {
+                for (name, path) in &app.browser_state.quick_access {
+                    let selected = app.current_folder.as_ref() == Some(path);
+                    if ui.selectable_label(selected, *name)
+                        .on_hover_text(path.display().to_string())
+                        .clicked()
+                    {
+                        click_folder = Some(path.clone());
+                    }
+                }
+            });
+        ui.separator();
     }
+    let clicked_shortcut = click_folder.is_some();
+    let heading = if cfg!(windows) { "This PC" } else { "Computer" };
+    egui::CollapsingHeader::new(heading)
+        .default_open(true)
+        .show(ui, |ui| {
+            for node in &app.browser_state.tree_nodes.clone() {
+                show_node(app, ui, node, 0, &mut click_folder);
+            }
+        });
 
     // One-shot auto-scroll: only jump on folder change / return from viewer,
     // otherwise the user stays in control of the tree scroll position.
@@ -141,6 +177,9 @@ pub fn show_tree(app: &mut App, ui: &mut Ui) {
     if let Some(folder) = click_folder {
         app.current_folder = Some(folder);
         app.scan_folder();
+        if clicked_shortcut {
+            app.browser_state.scroll_to_selected = false;
+        }
     }
 }
 

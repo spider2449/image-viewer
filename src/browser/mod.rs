@@ -20,6 +20,7 @@ pub struct State {
     pub selected_thumb: Option<usize>,
     pub selected_folder: Option<usize>,
     pub tree_nodes: Vec<tree::TreeNode>,
+    pub quick_access: Vec<(&'static str, PathBuf)>,
     pub expanded_paths: Vec<PathBuf>,
     pub show_list_view: bool,
     pub tree_width: f32,
@@ -44,6 +45,7 @@ impl State {
             selected_thumb: None,
             selected_folder: None,
             tree_nodes: Vec::new(),
+            quick_access: tree::quick_access_folders(),
             expanded_paths: Vec::new(),
             show_list_view: false,
             tree_width: 200.0,
@@ -195,6 +197,7 @@ fn finish_folder_delete(app: &mut App, deleted_path: &std::path::Path) {
     app.browser_state.pending_delete = None;
     app.browser_state.error_message = None;
     app.browser_state.tree_nodes.clear();
+    app.browser_state.quick_access = tree::quick_access_folders();
     app.browser_state
         .expanded_paths
         .retain(|path| !path.starts_with(deleted_path));
