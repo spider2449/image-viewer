@@ -1,3 +1,4 @@
+use crate::icons::Icon;
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,10 +53,10 @@ pub(super) fn show(app: &mut App, ctx: &egui::Context, colors: crate::theme::The
                 let can_redo = (objects && state.annotate.can_redo())
                     || (state.adjustments.is_neutral() && state.can_redo());
                 let changed = state.has_unsaved_changes();
-                if ui.add_enabled(can_undo, egui::Button::new("Undo")).clicked() {
+                if ui.add_enabled(can_undo, Icon::Undo.button(ui, "Undo")).clicked() {
                     history_action(app, ctx, false);
                 }
-                if ui.add_enabled(can_redo, egui::Button::new("Redo")).clicked() {
+                if ui.add_enabled(can_redo, Icon::Redo.button(ui, "Redo")).clicked() {
                     history_action(app, ctx, true);
                 }
                 ui.menu_button("More", |ui| {
@@ -72,14 +73,16 @@ pub(super) fn show(app: &mut App, ctx: &egui::Context, colors: crate::theme::The
             ui.separator();
             let previous = app.editor_state.section;
             ui.horizontal_wrapped(|ui| {
-                for (section, label) in [
-                    (Section::Adjust, "Adjust"),
-                    (Section::Geometry, "Geometry"),
-                    (Section::Selection, "Selection"),
-                    (Section::Annotate, "Annotate"),
-                    (Section::Export, "Export"),
+                for (section, icon, label) in [
+                    (Section::Adjust, Icon::Adjust, "Adjust"),
+                    (Section::Geometry, Icon::Crop, "Geometry"),
+                    (Section::Selection, Icon::Wand, "Selection"),
+                    (Section::Annotate, Icon::Pencil, "Annotate"),
+                    (Section::Export, Icon::Save, "Export"),
                 ] {
-                    ui.selectable_value(&mut app.editor_state.section, section, label);
+                    if ui.add(icon.button(ui, label).selected(app.editor_state.section == section)).clicked() {
+                        app.editor_state.section = section;
+                    }
                 }
             });
             if previous != app.editor_state.section {

@@ -12,6 +12,7 @@ mod file_cache;
 mod font_loader;
 mod format_ext;
 mod image_loader;
+mod icons;
 mod selection;
 mod theme;
 mod thumbnail_cache;
@@ -24,6 +25,7 @@ fn main() -> eframe::Result {
     let startup_image = std::env::args_os().nth(1).map(PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_icon(icons::window_icon())
             .with_inner_size([1200.0, 800.0])
             .with_min_inner_size([600.0, 400.0])
             .with_title(&format!("Image Viewer v{}", env!("CARGO_PKG_VERSION"))),

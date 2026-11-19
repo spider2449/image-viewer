@@ -1,3 +1,4 @@
+use crate::icons::Icon;
 use crate::app::App;
 use eframe::egui::{self, Color32, TextureOptions, Vec2, Stroke, CornerRadius};
 use std::path::PathBuf;
@@ -33,8 +34,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     let mut size_changed = false;
     // ── Toolbar ────────────────────────────────────────────
     ui.horizontal(|ui| {
-        ui.label(crate::theme::styled_icon("\u{25C0}", &colors));
-        if ui.button("Up").clicked() {
+        if ui.add(Icon::Up.button(ui, "Up")).clicked() {
             if let Some(ref cur) = app.current_folder {
                 if let Some(parent) = cur.parent() {
                     app.current_folder = Some(parent.to_path_buf());
@@ -44,7 +44,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
         }
         ui.separator();
         if ui
-            .selectable_label(app.browser_state.show_list_view, "\u{2630} List")
+            .add(Icon::List.button(ui, "List").selected(app.browser_state.show_list_view))
             .clicked()
         {
             app.browser_state.show_list_view = !app.browser_state.show_list_view;
@@ -64,7 +64,7 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
             }
         });
         ui.separator();
-        if ui.button("\u{21BB} Refresh").clicked() {
+        if ui.add(Icon::Refresh.button(ui, "Refresh")).clicked() {
             app.scan_folder();
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -199,13 +199,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             rect.min,
                             Vec2::new(app.config.thumb_size, app.config.thumb_size),
                         );
-                        ui.painter().text(
-                            thumb_rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            entry_glyph(true, folder),
-                            egui::FontId::proportional(40.0),
-                            colors.accent,
-                        );
+                        Icon::Folder.paint(ui, thumb_rect.center(), 40.0);
                         let name = folder
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
@@ -300,13 +294,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         );
 
                         if !can_open_in_viewer(path) {
-                            ui.painter().text(
-                                thumb_rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                entry_glyph(false, path),
-                                egui::FontId::proportional(28.0),
-                                colors.text_secondary,
-                            );
+                            Icon::Document.paint(ui, thumb_rect.center(), 32.0);
                         } else if let Some(Some(ci)) = app.browser_state.thumbnails.get(path) {
                             let tex = if let Some(t) = app.browser_state.thumb_textures.get(path) {
                                 t.clone()
@@ -337,21 +325,9 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                                 Color32::WHITE,
                             );
                         } else if app.browser_state.thumbnails.contains(path) {
-                            ui.painter().text(
-                                thumb_rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                "\u{2716}",
-                                egui::FontId::proportional(20.0),
-                                colors.danger,
-                            );
+                            Icon::Error.paint(ui, thumb_rect.center(), 22.0);
                         } else {
-                            ui.painter().text(
-                                thumb_rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                "...",
-                                egui::FontId::proportional(20.0),
-                                colors.accent,
-                            );
+                            Icon::Loading.paint(ui, thumb_rect.center(), 22.0);
                         }
 
                         // Filename label
@@ -540,19 +516,22 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
 
             // Name header + drag handle
             let cur_sort = app.config.sort_by.clone();
-            let arrow = if app.config.sort_descending { " \u{25BC}" } else { " \u{25B2}" };
             let hdr_rect = |x: f32, w: f32| egui::Rect::from_min_size(egui::pos2(x, header_y), Vec2::new(w, header_h));
-            let label = |key: &str, name: &str| if cur_sort == key { format!("{name}{arrow}") } else { name.to_string() };
+            let descending = app.config.sort_descending;
+            let header = |ui: &egui::Ui, key: &str, name: &str, x: f32| {
+                let bounds = ui.painter().text(
+                    egui::pos2(x + 4.0, header_y + header_h / 2.0), egui::Align2::LEFT_CENTER,
+                    name, egui::FontId::proportional(14.0), colors.text_primary,
+                );
+                if cur_sort == key {
+                    let arrow = if descending { Icon::Down } else { Icon::Up };
+                    arrow.paint(ui, bounds.right_center() + egui::vec2(9.0, 0.0), 12.0);
+                }
+            };
             if ui.interact(hdr_rect(x, widths.name), egui::Id::new("sort_name"), egui::Sense::click()).clicked() {
                 sort_click = Some("name");
             }
-            ui.painter().text(
-                egui::pos2(x + 4.0, header_y + header_h / 2.0),
-                egui::Align2::LEFT_CENTER,
-                label("name", "Name"),
-                egui::FontId::proportional(14.0),
-                colors.text_primary,
-            );
+            header(ui, "name", "Name", x);
             x += widths.name;
             x = drag_handle(ui, egui::Id::new("drag_name"), x, header_y, header_h, HANDLE_W, colors.border, |d| {
                 app.config.column_widths.name = (app.config.column_widths.name + d).max(MIN_W);
@@ -563,13 +542,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             if ui.interact(hdr_rect(x, widths.size), egui::Id::new("sort_size"), egui::Sense::click()).clicked() {
                 sort_click = Some("size");
             }
-            ui.painter().text(
-                egui::pos2(x + 4.0, header_y + header_h / 2.0),
-                egui::Align2::LEFT_CENTER,
-                label("size", "Size"),
-                egui::FontId::proportional(14.0),
-                colors.text_primary,
-            );
+            header(ui, "size", "Size", x);
             x += widths.size;
             x = drag_handle(ui, egui::Id::new("drag_size"), x, header_y, header_h, HANDLE_W, colors.border, |d| {
                 app.config.column_widths.size = (app.config.column_widths.size + d).max(MIN_W);
@@ -580,13 +553,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
             if ui.interact(hdr_rect(x, widths.date), egui::Id::new("sort_date"), egui::Sense::click()).clicked() {
                 sort_click = Some("date");
             }
-            ui.painter().text(
-                egui::pos2(x + 4.0, header_y + header_h / 2.0),
-                egui::Align2::LEFT_CENTER,
-                label("date", "Date"),
-                egui::FontId::proportional(14.0),
-                colors.text_primary,
-            );
+            header(ui, "date", "Date", x);
 
             if ui.input(|i| i.pointer.any_released()) {
                 if app.config.column_widths.name != saved_widths.name
@@ -619,13 +586,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 let widths = col_widths(&app.config.column_widths, rect.width(), ICON_W, MIN_W, GAP);
                 let mut x = rect.min.x;
                 let cy = rect.center().y;
-                ui.painter().text(
-                    egui::pos2(x + ICON_W / 2.0, cy),
-                    egui::Align2::CENTER_CENTER,
-                    entry_glyph(true, folder),
-                    egui::FontId::proportional(12.0),
-                    colors.accent,
-                );
+                Icon::Folder.paint(ui, egui::pos2(x + ICON_W / 2.0, cy), 18.0);
                 x += ICON_W;
                 let name = folder
                     .file_name()
@@ -709,19 +670,7 @@ fn show_list_view(app: &mut App, ui: &mut egui::Ui) {
                 let mut x = rect.min.x;
                 let cy = rect.center().y;
 
-                // Icon: image vs generic file
-                let (glyph, glyph_color) = if can_open_in_viewer(path) {
-                    ("\u{1F5BC}", colors.text_secondary)
-                } else {
-                    (entry_glyph(false, path), colors.text_secondary)
-                };
-                ui.painter().text(
-                    egui::pos2(x + ICON_W / 2.0, cy),
-                    egui::Align2::CENTER_CENTER,
-                    glyph,
-                    egui::FontId::proportional(12.0),
-                    glyph_color,
-                );
+                file_icon(path).paint(ui, egui::pos2(x + ICON_W / 2.0, cy), 18.0);
                 x += ICON_W;
 
                 // Name (truncated with ellipsis + clipped to column so long names
@@ -885,17 +834,8 @@ fn can_open_in_viewer(path: &std::path::Path) -> bool {
     crate::format_ext::is_supported_extension(path)
 }
 
-/// Glyph for a grid/list cell that has no image thumbnail:
-/// folders get a folder glyph, non-image files get a document glyph,
-/// images return "" (thumbnail is drawn instead).
-pub fn entry_glyph(is_dir: bool, path: &std::path::Path) -> &'static str {
-    if is_dir {
-        "\u{1F4C1}" // 📁 folder — visually distinct from files
-    } else if can_open_in_viewer(path) {
-        ""
-    } else {
-        "\u{1F4C4}" // 📄 document — generic file, not a folder
-    }
+fn file_icon(path: &std::path::Path) -> Icon {
+    if can_open_in_viewer(path) { Icon::Photo } else { Icon::Document }
 }
 
 /// Truncate `name` with an ellipsis so its measured width fits `max_width`.
@@ -942,7 +882,7 @@ fn fit_draw_size(tex_w: f32, tex_h: f32, cell: f32) -> Vec2 {
 
 #[cfg(test)]
 mod tests {
-    use super::{can_open_in_viewer, compute_grid_layout, entry_glyph, fit_draw_size, format_size, format_timestamp, grid_label_display, truncate_to_fit};
+    use super::{can_open_in_viewer, compute_grid_layout, file_icon, Icon, fit_draw_size, format_size, format_timestamp, grid_label_display, truncate_to_fit};
 
     #[test]
     fn test_single_incomplete_row_left_aligns() {
@@ -964,13 +904,9 @@ mod tests {
     }
 
     #[test]
-    fn test_entry_glyph_folder_distinct_from_file() {
-        let folder = entry_glyph(true, std::path::Path::new("anything"));
-        let doc = entry_glyph(false, std::path::Path::new("a.txt"));
-        let image = entry_glyph(false, std::path::Path::new("a.jpg"));
-        assert_ne!(folder, doc, "folder and generic file must not share a glyph");
-        assert_eq!(image, "", "images render thumbnails, not a glyph");
-        assert!(!doc.is_empty());
+    fn test_file_icons() {
+        assert_eq!(file_icon(std::path::Path::new("a.txt")), Icon::Document);
+        assert_eq!(file_icon(std::path::Path::new("a.jpg")), Icon::Photo);
     }
 
     #[test]

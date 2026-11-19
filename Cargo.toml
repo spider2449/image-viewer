@@ -1,6 +1,6 @@
 ﻿[package]
 name = "image-viewer"
-version = "0.1.88"
+version = "0.1.89"
 edition = "2021"
 license = "MIT"
 
@@ -17,3 +17,6 @@ lru = "0.12"
 open = "5"
 trash = "5"
 arboard = "3"
+
+[build-dependencies]
+embed-resource = "3"

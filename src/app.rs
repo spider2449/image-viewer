@@ -503,6 +503,7 @@ impl eframe::App for App {
             })
             .show(ctx, |ui| {
                 egui::menu::bar(ui, |ui| {
+                    crate::icons::logo(ui, 22.0);
                     let panel_bg = self.theme_colors().panel_bg;
                     ui.style_mut().visuals.widgets.inactive.bg_fill = panel_bg;
                     ui.menu_button("File", |ui| {
@@ -679,6 +680,7 @@ impl eframe::App for App {
                 .default_size([300.0, 120.0])
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
+                        crate::icons::logo(ui, 72.0);
                         ui.heading(&format!("Image Viewer v{}", env!("CARGO_PKG_VERSION")));
                         ui.colored_label(colors.text_secondary, "MIT License");
                         ui.add_space(8.0);

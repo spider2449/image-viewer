@@ -1,5 +1,7 @@
 # Image Viewer
 
+<img src="assets/logo.svg" width="96" height="96" alt="Image Viewer" />
+
 A cross-platform desktop image viewer and editor built with [egui](https://github.com/emilk/egui) and Rust.
 
 ## Features

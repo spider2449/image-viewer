@@ -1,3 +1,4 @@
+use crate::icons::Icon;
 use crate::app::{App, Mode};
 use crate::image_loader;
 use crate::selection::WandMode;
@@ -64,16 +65,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     // Navigation group
                     if ui
-                        .button(egui::RichText::new("\u{2190} Browser").color(colors.accent))
+                        .add(Icon::Back.button(ui, "Browser"))
                         .clicked()
                     {
                         app.request_browser();
                     }
                     ui.separator();
-                    if ui.button("\u{25C0} Prev").clicked() {
+                    if ui.add(Icon::Prev.button(ui, "Prev")).clicked() {
                         app.prev_image();
                     }
-                    if ui.button("\u{25B6} Next").clicked() {
+                    if ui.add(Icon::Next.button(ui, "Next")).clicked() {
                         app.next_image();
                     }
                     // Zoom group
@@ -127,17 +128,17 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         }
                     }
                     // Fullscreen
-                    if ui.button("\u{26F6} FS").clicked() {
+                    if ui.add(Icon::Fullscreen.button(ui, "FS")).clicked() {
                         app.viewer_state.is_fullscreen = true;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
                     }
                     ui.separator();
-                    let slideshow_label = if app.viewer_state.is_slideshow {
-                        "\u{23F8} Stop"
+                    let (icon, slideshow_label) = if app.viewer_state.is_slideshow {
+                        (Icon::Stop, "Stop")
                     } else {
-                        "\u{25B6} Slide"
+                        (Icon::Play, "Slide")
                     };
-                    if ui.button(slideshow_label).clicked() {
+                    if ui.add(icon.button(ui, slideshow_label)).clicked() {
                         app.viewer_state.is_slideshow = !app.viewer_state.is_slideshow;
                         app.viewer_state.slideshow_timer = 0.0;
                     }
@@ -164,15 +165,15 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         Color32::from_black_alpha(128),
                     );
                     ui.horizontal(|ui| {
-                        if ui.button("\u{2190} Browser").clicked() {
+                        if ui.add(Icon::Back.button(ui, "Browser")).clicked() {
                             app.request_browser();
                             app.viewer_state.is_fullscreen = false;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                         }
-                        if ui.button("\u{25C0}").clicked() {
+                        if ui.add(egui::Button::image(Icon::Prev.image(ui, 16.0))).on_hover_text("Prev").clicked() {
                             app.prev_image();
                         }
-                        if ui.button("\u{25B6}").clicked() {
+                        if ui.add(egui::Button::image(Icon::Next.image(ui, 16.0))).on_hover_text("Next").clicked() {
                             app.next_image();
                         }
                         if ui.button("Fit").clicked() {

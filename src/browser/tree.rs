@@ -1,3 +1,4 @@
+use crate::icons::Icon;
 use crate::app::App;
 use eframe::egui::Ui;
 use std::path::PathBuf;
@@ -177,8 +178,8 @@ fn show_node(
             ui.add_space(indent);
 
             if has_children {
-                let expand_label = if expanded { "\u{25BC}" } else { "\u{25B6}" };
-                if ui.selectable_label(false, expand_label).clicked() {
+                let (icon, hint) = if expanded { (Icon::Down, "Collapse folder") } else { (Icon::Next, "Expand folder") };
+                if ui.add(egui::Button::image(icon.image(ui, 12.0)).frame(false)).on_hover_text(hint).clicked() {
                     if expanded {
                         app.browser_state.expanded_paths.retain(|p| p != &node.path);
                     } else {
@@ -192,16 +193,7 @@ fn show_node(
                 ui.add_space(16.0);
             }
 
-            // Folder icon stays in the theme family: accent for roots,
-            // muted secondary tones for deeper levels.
-            let icon_color = if depth == 0 {
-                colors.accent
-            } else if depth == 1 {
-                colors.text_secondary
-            } else {
-                colors.text_secondary.gamma_multiply(0.7)
-            };
-            ui.label(egui::RichText::new("\u{1F4C1}").color(icon_color));
+            ui.add(Icon::Folder.image(ui, 18.0));
             ui.add_space(4.0);
 
             let label_color = if is_selected {
