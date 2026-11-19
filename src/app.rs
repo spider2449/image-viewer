@@ -204,9 +204,9 @@ impl App {
         let mut picked: Option<crate::theme::Theme> = None;
         egui::Window::new("Themes")
             .open(&mut self.show_themes)
-            .default_size([460.0, 380.0])
+            .default_size([400.0, 390.0])
             .show(ctx, |ui| {
-                ui.label("Hover to preview — click a row to apply.");
+                ui.colored_label(chrome.text_secondary, "Hover to preview — click a row to apply.");
                 ui.add_space(4.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for theme in crate::theme::Theme::all() {
@@ -216,52 +216,32 @@ impl App {
                             egui::Vec2::new(ui.available_width(), 48.0),
                             egui::Sense::click(),
                         );
-                        #[allow(deprecated)]
-                        ui.allocate_ui_at_rect(rect.shrink(4.0), |ui| {
-                            ui.horizontal(|ui| {
-                                for sw in [
-                                    pal.panel_bg,
-                                    pal.card_bg,
-                                    pal.accent,
-                                    pal.text_primary,
-                                    pal.danger,
-                                ] {
-                                    let (srect, _) = ui.allocate_exact_size(
-                                        egui::Vec2::splat(18.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    ui.painter().rect_filled(
-                                        srect,
-                                        egui::CornerRadius::same(4),
-                                        sw,
-                                    );
-                                }
-                                ui.add_space(4.0);
-                                ui.vertical(|ui| {
-                                    let name = if is_current {
-                                        format!("{} ●", theme.name())
-                                    } else {
-                                        theme.name().to_string()
-                                    };
-                                    ui.label(egui::RichText::new(name).strong());
-                                    ui.colored_label(
-                                        chrome.text_secondary,
-                                        theme.description(),
-                                    );
-                                });
-                            });
-                        });
-                        let border = if resp.hovered() || is_current {
-                            chrome.accent
-                        } else {
-                            chrome.border
-                        };
-                        ui.painter().rect_stroke(
-                            rect,
-                            egui::CornerRadius::same(6),
-                            egui::Stroke::new(if is_current { 2.0 } else { 1.0_f32 }, border),
-                            egui::StrokeKind::Outside,
+                        chrome.paint_card(ui.painter(), rect, is_current, resp.hovered());
+                        let painter = ui.painter().with_clip_rect(rect.shrink(4.0).intersect(ui.clip_rect()));
+                        let x = rect.left() + 12.0;
+                        let y = rect.center().y;
+                        for (index, color) in [pal.bg_dark, pal.panel_bg, pal.accent].into_iter().enumerate() {
+                            let swatch = egui::Rect::from_min_size(
+                                egui::pos2(x + index as f32 * 10.0, y - 12.0),
+                                egui::vec2(12.0, 24.0),
+                            );
+                            painter.rect(
+                                swatch, 3.0, color,
+                                egui::Stroke::new(1.0_f32, pal.border),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        painter.text(
+                            egui::pos2(x + 44.0, y - 9.0), egui::Align2::LEFT_CENTER,
+                            theme.name(), egui::TextStyle::Button.resolve(ui.style()), chrome.text_primary,
                         );
+                        painter.text(
+                            egui::pos2(x + 44.0, y + 9.0), egui::Align2::LEFT_CENTER,
+                            theme.description(), egui::TextStyle::Small.resolve(ui.style()), chrome.text_secondary,
+                        );
+                        resp.widget_info(|| egui::WidgetInfo::selected(
+                            egui::WidgetType::SelectableLabel, true, is_current, theme.name(),
+                        ));
                         if resp.hovered() {
                             hovered = Some(*theme);
                         }
@@ -478,6 +458,14 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        // Give the window shortcut priority over focused controls and editor tools.
+        if self.viewer_state.is_fullscreen
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            self.viewer_state.is_fullscreen = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        }
+
         while let Some(result) = self.thumbnail_cache.poll() {
             self.browser_state.thumbnails.put(result.path, result.image);
         }
@@ -497,15 +485,10 @@ impl eframe::App for App {
         self.theme_hovered_frame = false;
 
         egui::TopBottomPanel::top("menu_bar")
-            .frame(egui::Frame {
-                fill: self.theme_colors().panel_bg,
-                ..Default::default()
-            })
+            .frame(self.theme_colors().toolbar_frame())
             .show(ctx, |ui| {
                 egui::menu::bar(ui, |ui| {
                     crate::icons::logo(ui, 22.0);
-                    let panel_bg = self.theme_colors().panel_bg;
-                    ui.style_mut().visuals.widgets.inactive.bg_fill = panel_bg;
                     ui.menu_button("File", |ui| {
                         if ui.button("New File").clicked() {
                             self.create_new_file();

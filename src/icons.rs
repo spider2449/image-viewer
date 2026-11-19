@@ -95,5 +95,6 @@ impl Icon {
 
     pub fn button(self, ui: &Ui, label: &str) -> egui::Button<'static> {
         egui::Button::image_and_text(self.image(ui, 16.0), label.to_owned())
+            .corner_radius(ui.visuals().widgets.inactive.corner_radius)
     }
 }

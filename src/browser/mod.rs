@@ -92,7 +92,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         app.browser_state.tree_nodes = tree::build_tree(roots);
     }
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    let frame = egui::Frame::central_panel(&ctx.style()).fill(colors.bg_dark);
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         let tree_w = app.browser_state.tree_width.max(120.0);
         let full_rect = ui.max_rect();
 

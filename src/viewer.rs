@@ -56,12 +56,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     if !is_fullscreen {
         egui::TopBottomPanel::top("viewer_toolbar")
-            .frame(egui::Frame {
-                fill: colors.panel_bg,
-                ..Default::default()
-            })
+            .frame(colors.toolbar_frame())
             .show(ctx, |ui| {
-                let colors = colors;
                 ui.horizontal(|ui| {
                     // Navigation group
                     if ui
@@ -79,7 +75,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                     // Zoom group
                     ui.separator();
-                    if ui.button("Fit").clicked() {
+                    if ui.selectable_label(app.viewer_state.zoom_mode == ZoomMode::Fit, "Fit").clicked() {
                         app.viewer_state.zoom_mode = ZoomMode::Fit;
                         app.viewer_state.pan_offset = Vec2::ZERO;
                     }
@@ -176,7 +172,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         if ui.add(egui::Button::image(Icon::Next.image(ui, 16.0))).on_hover_text("Next").clicked() {
                             app.next_image();
                         }
-                        if ui.button("Fit").clicked() {
+                        if ui.selectable_label(app.viewer_state.zoom_mode == ZoomMode::Fit, "Fit").clicked() {
                             app.viewer_state.zoom_mode = ZoomMode::Fit;
                             app.viewer_state.pan_offset = Vec2::ZERO;
                         }
@@ -431,24 +427,18 @@ fn draw_image(
         display_size,
     );
 
-    // Dark background behind image area (replaces cell-by-cell checkerboard).
-    // The border below provides visual separation from the image.
-    ui.painter().rect_filled(
-        draw_rect,
-        egui::CornerRadius::ZERO,
-        colors.bg_dark,
-    );
-
-    // Inner border around image area
-    let border_rect = egui::Rect::from_min_size(image_rect.min, available);
+    let border_width = 1.0_f32;
     ui.painter().rect_stroke(
-        border_rect,
+        image_rect,
         egui::CornerRadius::ZERO,
-        egui::Stroke::new(1.0_f32, colors.border),
+        egui::Stroke::new(border_width, colors.border),
         egui::StrokeKind::Inside,
     );
 
-    // Draw image
+    // Clip the texture and editing overlays together, keeping image coordinates
+    // intact when zooming or panning past the edge of the canvas.
+    ui.shrink_clip_rect(image_rect.shrink(border_width));
+    ui.painter().rect_filled(draw_rect, egui::CornerRadius::ZERO, colors.bg_dark);
     ui.painter().image(
         tex.id(),
         draw_rect,

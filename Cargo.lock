@@ -1790,7 +1790,7 @@ dependencies = [
 
 [[package]]
 name = "image-viewer"
-version = "0.1.89"
+version = "0.1.90"
 dependencies = [
  "ab_glyph",
  "arboard",

@@ -175,6 +175,23 @@ pub fn palette(theme: Theme) -> ThemeColors {
     }
 }
 
+impl ThemeColors {
+    pub fn toolbar_frame(self) -> egui::Frame {
+        egui::Frame::NONE.fill(self.panel_bg).inner_margin(Margin::symmetric(8, 4))
+    }
+
+    pub fn paint_card(self, painter: &egui::Painter, rect: egui::Rect, selected: bool, hovered: bool) {
+        let (fill, stroke) = if selected {
+            (self.selected_bg, Stroke::new(2.0_f32, self.accent))
+        } else if hovered {
+            (self.hover_bg, Stroke::new(1.0_f32, self.accent))
+        } else {
+            (self.card_bg, Stroke::new(1.0_f32, self.border))
+        };
+        painter.rect(rect, CornerRadius::same(6), fill, stroke, egui::StrokeKind::Inside);
+    }
+}
+
 // ── Build the global Visuals ───────────────────────────────
 pub fn theme_visuals(theme: Theme) -> Visuals {
     let c = palette(theme);
@@ -200,6 +217,15 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
         }
     };
 
+    let widget = |fill, border, foreground| egui::style::WidgetVisuals {
+        bg_fill: fill,
+        weak_bg_fill: fill,
+        bg_stroke: Stroke::new(1.0_f32, border),
+        corner_radius: CornerRadius::same(5),
+        fg_stroke: Stroke::new(1.2_f32, foreground),
+        expansion: 0.0,
+    };
+
     Visuals {
         dark_mode: theme.is_dark(),
         override_text_color: Some(c.text_primary),
@@ -220,46 +246,11 @@ pub fn theme_visuals(theme: Theme) -> Visuals {
             stroke: Stroke::new(1.0_f32, c.accent),
         },
         widgets: egui::style::Widgets {
-            noninteractive: egui::style::WidgetVisuals {
-                bg_fill: c.card_bg,
-                weak_bg_fill: c.panel_bg,
-                bg_stroke: Stroke::new(1.0_f32, c.border),
-                corner_radius: CornerRadius::same(8),
-                fg_stroke: Stroke::new(1.0_f32, c.text_secondary),
-                expansion: 0.0,
-            },
-            inactive: egui::style::WidgetVisuals {
-                bg_fill: c.panel_bg,
-                weak_bg_fill: c.card_bg,
-                bg_stroke: Stroke::new(1.0_f32, c.border),
-                corner_radius: CornerRadius::same(8),
-                fg_stroke: Stroke::new(1.0_f32, c.text_primary),
-                expansion: 0.0,
-            },
-            hovered: egui::style::WidgetVisuals {
-                bg_fill: c.hover_bg,
-                weak_bg_fill: c.hover_bg,
-                bg_stroke: Stroke::new(1.0_f32, c.accent),
-                corner_radius: CornerRadius::same(8),
-                fg_stroke: Stroke::new(1.2_f32, c.accent),
-                expansion: 0.5,
-            },
-            active: egui::style::WidgetVisuals {
-                bg_fill: c.selected_bg,
-                weak_bg_fill: c.selected_bg,
-                bg_stroke: Stroke::new(1.0_f32, c.accent),
-                corner_radius: CornerRadius::same(8),
-                fg_stroke: Stroke::new(2.0_f32, c.accent),
-                expansion: 1.0,
-            },
-            open: egui::style::WidgetVisuals {
-                bg_fill: c.card_bg,
-                weak_bg_fill: c.card_bg,
-                bg_stroke: Stroke::new(1.0_f32, c.border),
-                corner_radius: CornerRadius::same(8),
-                fg_stroke: Stroke::new(1.0_f32, c.text_primary),
-                expansion: 0.0,
-            },
+            noninteractive: widget(c.panel_bg, c.border, c.text_primary),
+            inactive: widget(c.card_bg, c.border, c.text_primary),
+            hovered: widget(c.hover_bg, c.accent, c.text_primary),
+            active: widget(c.selected_bg, c.accent, c.text_primary),
+            open: widget(c.selected_bg, c.accent, c.text_primary),
         },
         ..base
     }
@@ -285,8 +276,8 @@ pub fn apply_theme(ctx: &egui::Context, theme: Theme) {
 pub fn theme_style() -> Style {
     Style {
         spacing: egui::style::Spacing {
-            item_spacing: Vec2::new(10.0, 10.0),
-            button_padding: Vec2::new(10.0, 6.0),
+            item_spacing: Vec2::new(8.0, 6.0),
+            button_padding: Vec2::new(9.0, 4.0),
             indent: 16.0,
             scroll: egui::style::ScrollStyle {
                 bar_width: 6.0,

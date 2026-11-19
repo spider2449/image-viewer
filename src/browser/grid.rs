@@ -1,6 +1,6 @@
 use crate::icons::Icon;
 use crate::app::App;
-use eframe::egui::{self, Color32, TextureOptions, Vec2, Stroke, CornerRadius};
+use eframe::egui::{self, Color32, TextureOptions, Vec2};
 use std::path::PathBuf;
 
 const THUMB_PADDING: f32 = 8.0;
@@ -92,7 +92,6 @@ pub fn show_grid(app: &mut App, ui: &mut egui::Ui) {
     ui.add_space(8.0);
 
     if app.image_files.is_empty() && app.subfolders.is_empty() {
-        ui.allocate_space(ui.available_size());
         ui.centered_and_justified(|ui| {
             ui.colored_label(colors.text_secondary, "No files in this folder.");
         });
@@ -169,32 +168,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         let (rect, response) = ui.allocate_exact_size(cell_size, egui::Sense::click());
                         let hovered = response.hovered();
 
-                        if is_selected || hovered {
-                            let shadow_offset = Vec2::new(2.0, 2.0);
-                            ui.painter().rect_filled(
-                                egui::Rect::from_min_size(rect.min + shadow_offset, cell_size),
-                                CornerRadius::same(4),
-                                Color32::from_black_alpha(60),
-                            );
-                        }
-                        if is_selected {
-                            let glow_rect = rect.expand(3.0);
-                            ui.painter().rect_filled(
-                                glow_rect,
-                                CornerRadius::same(6),
-                                colors.selected_bg,
-                            );
-                        }
-                        let card_bg = if is_selected { colors.selected_bg } else { colors.card_bg };
-                        let border_color = if is_selected || hovered { colors.accent } else { colors.border };
-                        let border_width: f32 = if is_selected { 2.0 } else { 1.0 };
-                        ui.painter().rect(
-                            rect,
-                            CornerRadius::same(4),
-                            card_bg,
-                            Stroke::new(border_width, border_color),
-                            egui::StrokeKind::Outside,
-                        );
+                        colors.paint_card(ui.painter(), rect, is_selected, hovered);
                         let thumb_rect = egui::Rect::from_min_size(
                             rect.min,
                             Vec2::new(app.config.thumb_size, app.config.thumb_size),
@@ -208,7 +182,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             rect.min + Vec2::new(4.0, app.config.thumb_size),
                             Vec2::new(app.config.thumb_size - 8.0, LABEL_HEIGHT),
                         );
-                        let label_font = egui::FontId::proportional(11.0);
+                        let label_font = egui::FontId::proportional(12.0);
                         let display_name = grid_label_display(&name, app.config.thumb_size, |s| {
                             ui.painter().layout_no_wrap(s.to_string(), label_font.clone(), colors.text_primary).size().x
                         });
@@ -244,49 +218,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         let (rect, response) = ui.allocate_exact_size(cell_size, egui::Sense::click());
                         let hovered = response.hovered();
 
-                        // Shadow (subtle dark rect offset)
-                        if is_selected || hovered {
-                            let shadow_offset = Vec2::new(2.0, 2.0);
-                            ui.painter().rect_filled(
-                                egui::Rect::from_min_size(rect.min + shadow_offset, cell_size),
-                                CornerRadius::same(4),
-                                Color32::from_black_alpha(60),
-                            );
-                        }
-
-                        // Selection glow
-                        if is_selected {
-                            let glow_rect = rect.expand(3.0);
-                            ui.painter().rect_filled(
-                                glow_rect,
-                                CornerRadius::same(6),
-                                colors.selected_bg,
-                            );
-                        }
-
-                        // Card background
-                        let card_bg = if is_selected {
-                            colors.selected_bg
-                        } else {
-                            colors.card_bg
-                        };
-                        let border_color = if is_selected {
-                            colors.accent
-                        } else if hovered {
-                            colors.accent
-                        } else {
-                            colors.border
-                        };
-                        let border_width: f32 = if is_selected { 2.0 } else { 1.0 };
-
-                        ui.painter().rect(
-                            rect,
-                            CornerRadius::same(4),
-                            card_bg,
-                            Stroke::new(border_width, border_color),
-                            egui::StrokeKind::Outside,
-                        );
-
+                        colors.paint_card(ui.painter(), rect, is_selected, hovered);
                         // Thumbnail image area
                         let thumb_rect = egui::Rect::from_min_size(
                             rect.min,
@@ -306,7 +238,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                             };
                             let tex_size = tex.size_vec2();
                             let draw_size =
-                                fit_draw_size(tex_size.x, tex_size.y, app.config.thumb_size);
+                                fit_draw_size(tex_size.x, tex_size.y, thumb_rect.width() - 8.0);
                             let offset = Vec2::new(
                                 (app.config.thumb_size - draw_size.x) / 2.0,
                                 (app.config.thumb_size - draw_size.y) / 2.0,
@@ -342,7 +274,7 @@ fn show_thumbnail_grid(app: &mut App, ui: &mut egui::Ui) {
                         if app.browser_state.rename_target == Some(i) {
                             inline_rename(app, ui, path, label_rect);
                         } else {
-                            let label_font = egui::FontId::proportional(11.0);
+                            let label_font = egui::FontId::proportional(12.0);
                             let display_name = grid_label_display(&name, app.config.thumb_size, |s| {
                                 ui.painter().layout_no_wrap(s.to_string(), label_font.clone(), colors.text_secondary).size().x
                             });
@@ -434,7 +366,7 @@ fn inline_rename(app: &mut App, ui: &mut egui::Ui, path: &PathBuf, rect: egui::R
     let resp = ui.put(
         rect,
         egui::TextEdit::singleline(&mut buf)
-            .font(egui::FontId::proportional(11.0))
+            .font(egui::FontId::proportional(12.0))
             .margin(egui::Margin::symmetric(2, 2)),
     );
     app.browser_state.rename_buffer = buf;
